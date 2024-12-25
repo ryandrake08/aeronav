@@ -1,0 +1,4 @@
+env
+*.pstats
+__pycache__
+._*
