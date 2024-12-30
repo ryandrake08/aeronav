@@ -86,7 +86,7 @@ datasets = {
     "Alaska Wall Planning Chart West": {
         "input_file": "Alaska Wall Planning Chart.tif",
         "window": (81, 101, 17684, 12284),
-        "masks": [ [(1371,4970), (2875,4969), (2875,7972), (1371,7973)], [(2928,6658), (4278,6658), (4537,7445), (4535,7513), (2928,7513)], [(14691,101), (17765,101), (17765,7674), (14691,7674)], [(8873,10432), (15041,10432), (15041,12385), (8873,12385)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[1371,4970], [2875,4969], [2875,7972], [1371,7973], [1371,4970]]] ,[[[2928,6658], [4278,6658], [4537,7445], [4535,7513], [2928,7513], [2928,6658]]] ,[[[14691,101], [17765,101], [17765,7674], [14691,7674], [14691,101]]] ,[[[8873,10432], [15041,10432], [15041,12385], [8873,12385], [8873,10432]]]] } ],
         "geobound": (-180, None, None, None),
         "antimeridian": True,
     },
@@ -265,7 +265,7 @@ datasets = {
     },
     "Dutch Harbor SEC": {
         "window": (1340, 8, 15233, 11283),
-        "masks": [ [(5048,351), (7428,351), (7428,4041), (5048,4041)], [(10193,332), (13652,332), (13652,3541), (10193,3541)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[5048,351], [7428,351], [7428,4041], [5048,4041], [5048,351]]] ,[[[10193,332], [13652,332], [13652,3541], [10193,3541], [10193,332]]]] } ],
         "geobound": (-173, 52, None, None),
     },
     "Dutch Harbor SEC Dutch Harbor Inset": {
@@ -329,7 +329,7 @@ datasets = {
     },
     "ENR_AKH01": {
         "window": (2200, 263, 19590, 7471),
-        "masks": [ [(12856,4274), (21790,4272), (21790,7735), (12856,7735)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[12856,4274], [21790,4272], [21790,7735], [12856,7735], [12856,4274]]]] } ],
         "geobound": (-180, None, None, None),
         "antimeridian": True,
     },
@@ -350,7 +350,7 @@ datasets = {
     },
     "ENR_AKL01": {
         "window": (2205, 274, 19583, 7461),
-        "masks": [ [(7743,4020), (12261,4021), (12261,7735), (7743,7735)], [(15188,4216), (21788,4216), (21788,7735), (15187,7735)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[7743,4020], [12261,4021], [12261,7735], [7743,7735], [7743,4020]]] ,[[[15188,4216], [21788,4216], [21788,7735], [15187,7735], [15188,4216]]]] } ],
     },
     "ENR_AKL01_JNU": {
         "window": (85, 153, 4171, 3531),
@@ -367,20 +367,20 @@ datasets = {
     "ENR_AKL02W East": {
         "input_file": "ENR_AKL02W.tif",
         "window": (96, 111, 4466, 7465),
-        "masks": [ [(96,111), (1402,111), (1402,4019), (96,4019)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[96,111], [1402,111], [1402,4019], [96,4019], [96,111]]]] } ],
         "geobound": (None, None, 180, None),
         "antimeridian": True,
     },
     "ENR_AKL02W West": {
         "input_file": "ENR_AKL02W.tif",
         "window": (96, 111, 4466, 7465),
-        "masks": [ [(96,111), (1402,111), (1402,4019), (96,4019)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[96,111], [1402,111], [1402,4019], [96,4019], [96,111]]]] } ],
         "geobound": (-180, None, None, None),
         "antimeridian": True,
     },
     "ENR_AKL03": {
         "window": (6085, 265, 15711, 7470),
-        "masks": [ [(6085,265), (7485,265), (7485,4084), (6085,4084)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[6085,265], [7485,265], [7485,4084], [6085,4084], [6085,265]]]] } ],
     },
     "ENR_AKL03_FAI": {
         "window": (86, 105, 5110, 3649),
@@ -391,13 +391,13 @@ datasets = {
     "ENR_AKL04 West": {
         "input_file": "ENR_AKL04.tif",
         "window": (6529, 269, 15262, 7463),
-        "masks": [ [(6529,269), (10102,269), (10102,3810), (8947,3810), (6529,7239)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[6529,269], [10102,269], [10102,3810], [8947,3810], [6529,7239], [6529,269]]]] } ],
         "geobound": (-180, None, None, None),
         "antimeridian": True,
     },
     "ENR_AKL04_ANC": {
         "window": (209, 269, 7713, 7462),
-        "masks": [ [(6853,3631), (7922,3630), (7922,7730), (4351,7730), (4351,7183)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[6853,3631], [7922,3630], [7922,7730], [4351,7730], [4351,7183], [6853,3631]]]] } ],
     },
     "ENR_CA01_ANTIGUA": {
         "window": (22, 124, 5695, 2621),
@@ -461,12 +461,12 @@ datasets = {
     },
     "ENR_CL05": {
         "window": (1652, 197, 11695, 5604),
-        "masks": [ [(8599,199), (13347,199), (13347,2262), (10095,2262), (10095,2093), (8599,1293)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[8599,199], [13347,199], [13347,2262], [10095,2262], [10095,2093], [8599,1293], [8599,199]]]] } ],
     },
     "ENR_CL05 Charleston-Bermuda Inset": {
         "input_file": "ENR_CL05.tif",
         "window": (8702, 200, 4644, 1985),
-        "masks": [ [(8702,200), (13346,200), (13346,2185), (10190,2185), (10190,2056), (8702,1251)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[8702,200], [13346,200], [13346,2185], [10190,2185], [10190,2056], [8702,1251], [8702,200]]]] } ],
     },
     "ENR_CL06": {
         "window": (1652, 182, 11695, 5640),
@@ -482,7 +482,7 @@ datasets = {
     },
     "ENR_H04": {
         "window": (204, 105, 21691, 7630),
-        "masks": [ [(204,3054), (2364,3054), (2364,7735), (204,7735)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[204,3054], [2364,3054], [2364,7735], [204,7735], [204,3054]]]] } ],
     },
     "ENR_H05": {
         "window": (2105, 105, 19791, 7689),
@@ -617,12 +617,12 @@ datasets = {
     },
     "ENR_L34": {
         "window": (205, 260, 23591, 7472),
-        "masks": [ [(21595,260), (23796,260), (23796,4641), (22344,4254), (21738,3121)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[21595,260], [23796,260], [23796,4641], [22344,4254], [21738,3121], [21595,260]]]] } ],
     },
     "ENR_L34 Boston-Yarmouth Inset": {
         "input_file": "ENR_L34.tif",
         "window": (21827, 274, 1971, 4151),
-        "masks": [ [(21827,274), (21969,3082), (22502,4080), (23798,4425), (21827,4425)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[21827,274], [21969,3082], [22502,4080], [23798,4425], [21827,4425], [21827,274]]]] } ],
         "gcps": [(22662, 874, -70, 42), (23666, 1207, -70, 43), (22436, 1608, -69, 42), (23424, 1932, -69, 43), (21969, 3082, -67, 42), (22965, 3387, -67, 43)],
     },
     "ENR_L35": {
@@ -634,7 +634,7 @@ datasets = {
     "ENR_P01 East": {
         "input_file": "ENR_P01.tif",
         "window": (2204, 254, 15587, 7479),
-        "masks": [ [(2204,4765), (5161,4765), (5161,6436), (7001,6436), (7001,7733), (2204,7733)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[2204,4765], [5161,4765], [5161,6436], [7001,6436], [7001,7733], [2204,7733], [2204,4765]]]] } ],
         "geobound": (None, None, 180, None),
         "antimeridian": True,
     },
@@ -665,18 +665,18 @@ datasets = {
     },
     "GOM_WN": {
         "window": (74, 74, 15602, 12452),
-        "masks": [ [(74,74), (3504,74), (3504,5986), (74,5986)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[74,74], [3504,74], [3504,5986], [74,5986], [74,74]]]] } ],
     },
     "GOM_WS": {
         "window": (74, 74, 15603, 8136),
     },
     "Grand Canyon Air Tour Operators": {
         "window": (1646, 536, 11910, 5364),
-        "masks": [ [(12117,536), (13556,536), (13556,2067), (12114,2070)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[12117,536], [13556,536], [13556,2067], [12114,2070], [12117,536]]]] } ],
     },
     "Grand Canyon General Aviation": {
         "window": (3111, 564, 11910, 5364),
-        "masks": [ [(13576,564), (15021,564), (15021,2096), (13578,2099)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[13576,564], [15021,564], [15021,2096], [13578,2099], [13576,564]]]] } ],
     },
     "Grand Canyon General Aviation Marble Canyon Inset": {
         "input_file": "Grand Canyon General Aviation.tif",
@@ -702,11 +702,11 @@ datasets = {
     },
     "Hawaiian Islands SEC": {
         "window": (1845, 1009, 16760, 13718),
-        "masks": [ [(1845,1009), (4862,1009), (1845,5508)], [(4862,1009), (18605,1009), (18605,10228)], [(18605,10228), (18605,14727), (15588,14727)], [(1845,5508),(15588,14727),  (1845,14727)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[1845,1009], [4862,1009], [1845,5508], [1845,1009]]] ,[[[4862,1009], [18605,1009], [18605,10228], [4862,1009]]] ,[[[18605,10228], [18605,14727], [15588,14727], [18605,10228]]] ,[[[1845,5508], [15588,14727],  [1845,14727], [1845,5508]]]] } ],
     },
     "Honolulu Inset SEC": {
         "window": (68, 47, 5561, 4427),
-        "masks": [ [(5629,3216), (5629,4474), (4200,4474)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[5629,3216], [5629,4474], [4200,4474], [5629,3216]]]] } ],
     },
     "Houston FLY": {
         "window": (1537, 497, 7441, 7467),
@@ -726,7 +726,7 @@ datasets = {
     },
     "Jacksonville SEC": {
         "window": (1698, 0, 14919, 11315),
-        "masks": [ [(13614,0), (16617,0), (16617,3477), (13614,3477)], [(2250,7804), (4651,7804), (4651,10641), (2250,10641)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[13614,0], [16617,0], [16617,3477], [13614,3477], [13614,0]]] ,[[[2250,7804], [4651,7804], [4651,10641], [2250,10641], [2250,7804]]]] } ],
         "geobound": (-85, 28, None, None),
     },
     "Jacksonville SEC Jacksonville Inset": {
@@ -736,7 +736,7 @@ datasets = {
     },
     "Juneau SEC": {
         "window": (871, 59, 15637, 11301),
-        "masks": [ [(871,4217), (1460,4217), (1460,5051), (871,5051)], [(1588,2705), (4447,2705), (4447,3958), (1588,3958)], [(1616,4018), (4227,4018), (4227,5859), (1616,5859)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[871,4217], [1460,4217], [1460,5051], [871,5051], [871,4217]]] ,[[[1588,2705], [4447,2705], [4447,3958], [1588,3958], [1588,2705]]] ,[[[1616,4018], [4227,4018], [4227,5859], [1616,5859], [1616,4018]]]] } ],
         "geobound": (-141, 56, None, None),
     },
     "Juneau SEC Juneau Inset": {
@@ -759,7 +759,7 @@ datasets = {
     },
     "Ketchikan SEC": {
         "window": (1522, 21, 14987, 11246),
-        "masks": [ [(4648,912), (7226,912), (7226,4425), (4648,4425)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[4648,912], [7226,912], [7226,4425], [4648,4425], [4648,912]]]] } ],
         "geobound": (-139, 52, None, None),
     },
     "Ketchikan SEC Ketchikan Inset": {
@@ -773,7 +773,7 @@ datasets = {
     },
     "Kodiak SEC": {
         "window": (945, 5, 15651, 11358),
-        "masks": [ [(13777,8497), (16467,8497), (16488,11363), (13777,11363)], [(945,4266), (1479,4266), (1479,5100), (945,5100)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[13777,8497], [16467,8497], [16488,11363], [13777,11363], [13777,8497]]] ,[[[945,4266], [1479,4266], [1479,5100], [945,5100], [945,4266]]]] } ],
         "geobound": (-162, 56, None, None),
     },
     "Kodiak SEC Cape Newenham": {
@@ -814,7 +814,7 @@ datasets = {
     },
     "Los Angeles SEC": {
         "window": (535, 1373, 16110, 10976),
-        "masks": [ [(535,1373), (1591,1373), (1582,6255), (535,6256)], [(525,8082), (4688,8087), (4688,12349), (535,12349)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[535,1373], [1591,1373], [1582,6255], [535,6256], [535,1373]]] ,[[[525,8082], [4688,8087], [4688,12349], [535,12349], [525,8082]]]] } ],
         "geobound": (-122, 32, None, None),
     },
     "Los Angeles TAC": {
@@ -825,7 +825,7 @@ datasets = {
     },
     "Mariana Islands Inset SEC": {
         "window": (27, 34, 6125, 5974),
-        "masks": [ [(27,34), (3689,34), (3687,3235), (2116,4618), (27,4618)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[27,34], [3689,34], [3687,3235], [2116,4618], [27,4618], [27,34]]]] } ],
     },
     "McGrath SEC": {
         "window": (1710, 0, 14787, 11374),
@@ -840,27 +840,27 @@ datasets = {
     },
     "Miami FLY": {
         "window": (1575, 73, 8885, 8777),
-        "masks": [ [(7282,6938), (10404,6938), (10404,8799), (6359,8799), (6359,7324), (7282,7324)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[7282,6938], [10404,6938], [10404,8799], [6359,8799], [6359,7324], [7282,7324], [7282,6938]]]] } ],
     },
     "Miami FLY Florida Keys Inset": {
         "input_file": "Miami FLY.tif",
         "window": (6427, 7000, 3914, 1734),
-        "masks": [ [(6427,7000), (7344,7000), (7344,7386), (6427,7386)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[6427,7000], [7344,7000], [7344,7386], [6427,7386], [6427,7000]]]] } ],
         "gcps": [(7687, 7329, -81.5, 25), (8879, 7323, -81, 25), (10073, 7311, -80.5, 25), (6494, 8640, -82, 24.5), (7692, 8638, -81.5, 24.5), (8890, 8631, -81, 24.5), (10089, 8619, -80.5, 24.5)],
     },
     "Miami SEC": {
         "window": (1497, 0, 15562, 12018),
-        "masks": [ [(4107,0), (17059,0), (17059,1051), (4089,1041)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[4107,0], [17059,0], [17059,1051], [4089,1041], [4107,0]]]] } ],
         "geobound": (-83, 24, None, 28.5),
     },
     "Miami TAC": {
         "window": (1575, 72, 8890, 8783),
-        "masks": [ [(7285,6943), (10408,6944), (10408,8804), (6361,8803), (6361,7329), (7285,7329)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[7285,6943], [10408,6944], [10408,8804], [6361,8803], [6361,7329], [7285,7329], [7285,6943]]]] } ],
     },
     "Miami TAC Florida Keys Inset": {
         "input_file": "Miami TAC.tif",
         "window": (6429, 7006, 3917, 1732),
-        "masks": [ [(6429,7006), (7384,7006), (7384,7392), (6429,7392)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[6429,7006], [7384,7006], [7384,7392], [6429,7392], [6429,7006]]]] } ],
         "gcps": [(7687, 7329, -81.5, 25), (8879, 7323, -81, 25), (10073, 7311, -80.5, 25), (6494, 8640, -82, 24.5), (7692, 8638, -81.5, 24.5), (8890, 8631, -81, 24.5), (10089, 8619, -80.5, 24.5)],
     },
     "Minneapolis-St Paul TAC": {
@@ -872,7 +872,7 @@ datasets = {
     },
     "NARC": {
         "window": (82, 82, 13525, 9558),
-        "masks": [ [(82,82), (5308,82), (5308,2065), (4561,2065), (4561,2257), (3815,2257), (3815,3026), (3068,3026), (3068,3411), (2322,3411), (2322,3680), (820,3680), (820,3487), (82,3787)], [(82,8695), (1283,8695), (1283,9640), (82,9640)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[82,82], [5308,82], [5308,2065], [4561,2065], [4561,2257], [3815,2257], [3815,3026], [3068,3026], [3068,3411], [2322,3411], [2322,3680], [820,3680], [820,3487], [82,3787], [82,82]]] ,[[[82,8695], [1283,8695], [1283,9640], [82,9640], [82,8695]]]] } ],
     },
     "New Orleans FLY": {
         "window": (1546, 574, 7414, 5389),
@@ -886,7 +886,7 @@ datasets = {
     },
     "New York HEL": {
         "window": (2989, 1074, 10407, 7769),
-        "masks": [ [(2989,1074), (8387,1074), (8387,3333), (2989,3315)], [(11824,1074), (13396,1074), (13396,3309), (11836,3318)], [(2989,5936), (4445,5945), (4445,8843), (2989,8843)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[2989,1074], [8387,1074], [8387,3333], [2989,3315], [2989,1074]]] ,[[[11824,1074], [13396,1074], [13396,3309], [11836,3318], [11824,1074]]] ,[[[2989,5936], [4445,5945], [4445,8843], [2989,8843], [2989,5936]]]] } ],
     },
     "New York SEC": {
         "window": (1605, 0, 16257, 11363),
@@ -897,7 +897,7 @@ datasets = {
     },
     "Nome SEC": {
         "window": (883, 0, 15717, 11442),
-        "masks": [ [(2143,104), (4241,105), (4240,3013), (2142,3012)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[2143,104], [4241,105], [4240,3013], [2142,3012], [2143,104]]]] } ],
         "geobound": (-171.5, 64, None, None),
     },
     "Nome SEC Lavrentiya-Provideniya Inset": {
@@ -944,7 +944,7 @@ datasets = {
     "PORC_COMP West": {
         "input_file": "PORC_COMP.tif",
         "window": (62, 63, 17693, 12293),
-        "masks": [ [(9907,11846), (13344,11846), (13344,10336), (14976,10336), (14976,9665), (16373,9665), (16373, 9931), (17755,9931), (17755,12356), (9907,12356)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[9907,11846], [13344,11846], [13344,10336], [14976,10336], [14976,9665], [16373,9665], [16373, 9931], [17755,9931], [17755,12356], [9907,12356], [9907,11846]]]] } ],
         "geobound": (-180, None, None, None),
         "antimeridian": True,
     },
@@ -957,14 +957,14 @@ datasets = {
     "PORC_NE West": {
         "input_file": "PORC_NE.tif",
         "window": (62, 63, 17693, 12293),
-        "masks": [ [(13453,63), (17755,63), (17755,4140), (16636,4140), (16366,1998), (14734,1998), (14734,488), (13453,488),] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[13453,63], [17755,63], [17755,4140], [16636,4140], [16366,1998], [14734,1998], [14734,488], [13453,488], [13453,63]]]] } ],
         "geobound": (-180, None, None, None),
         "antimeridian": True,
     },
     "PORC_NW East": {
         "input_file": "PORC_NW.tif",
         "window": (62, 63, 17693, 12293),
-        "masks": [ [(62,63), (5325,63), (5325,530), (3085,530), (3085,2040), (2843,2040), (2843,3930), (1446,3930), (1446,2445), (62,2445)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[62,63], [5325,63], [5325,530], [3085,530], [3085,2040], [2843,2040], [2843,3930], [1446,3930], [1446,2445], [62,2445], [62,63]]]] } ],
         "geobound": (None, None, 180, None),
         "antimeridian": True,
     },
@@ -983,14 +983,14 @@ datasets = {
     "PORC_SE West": {
         "input_file": "PORC_SE.tif",
         "window": (62, 63, 17693, 12293),
-        "masks": [ [(62,6097), (614,6097), (614,9334), (2124,9334), (2124,10966), (3354,10966), (3354,12356), (62,12356)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[62,6097], [614,6097], [614,9334], [2124,9334], [2124,10966], [3354,10966], [3354,12356], [62,12356], [62,6097]]]] } ],
         "geobound": (-180, None, None, None),
         "antimeridian": True,
     },
     "PORC_SW East": {
         "input_file": "PORC_SW.tif",
         "window": (62, 63, 17693, 12293),
-        "masks": [ [(14388,10966), (15778,10966), (15778,9334), (17288,9334), (17288,6099), (17755,6099), (17755,12356), (14388,12356)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[14388,10966], [15778,10966], [15778,9334], [17288,9334], [17288,6099], [17755,6099], [17755,12356], [14388,12356], [14388,10966]]]] } ],
         "geobound": (None, None, 180, None),
         "antimeridian": True,
     },
@@ -1018,7 +1018,7 @@ datasets = {
     },
     "Samoan Islands Inset SEC": {
         "window": (33, 53, 8928, 3877),
-        "masks": [ [(6996,53), (8961,53), (8961,2542), (6996,2542)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[6996,53], [8961,53], [8961,2542], [6996,2542], [6996,53]]]] } ],
     },
     "San Antonio SEC": {
         "window": (1738, 0, 15117, 11290),
@@ -1052,7 +1052,7 @@ datasets = {
     },
     "Seward SEC": {
         "window": (1568, 11, 16290, 6181),
-        "masks": [ [(3152,6104), (17858,6089), (17858,6192), (3152,6192)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[3152,6104], [17858,6089], [17858,6192], [3152,6192], [3152,6104]]]] } ],
         "geobound": (-152.5, None, None, None),
     },
     "St Louis FLY": {
@@ -1086,15 +1086,15 @@ datasets = {
     },
     "U.S. VFR Wall Planning Chart": {
         "window": (466, 297, 17636, 10698),
-        "masks": [ [(593,7940), (2099,7932), (2116,10939), (601,10947)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[593,7940], [2099,7932], [2116,10939], [601,10947], [593,7940]]]] } ],
     },
     "US_IFR_PLAN_EAST": {
         "window": (2, 260, 9794, 11454),
-        "masks": [ [(2,11714), (5675,11714), (5675,12292), (2,12292)], [(8326,4794), (9796,3438), (9796,12292), (8326,12292)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[2,11714], [5675,11714], [5675,12292], [2,12292], [2,11714]]] ,[[[8326,4794], [9796,3438], [9796,12292], [8326,12292], [8326,4794]]]] } ],
     },
     "US_IFR_PLAN_WEST": {
         "window": (3854, 260, 9794, 12032),
-        "masks": [ [(3854,7477), (12760,11931), (12400,12292), (3854,12292)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[3854,7477], [12760,11931], [12400,12292], [3854,12292], [3854,7477]]]] } ],
     },
     "Washington HEL": {
         "window": (3029, 314, 10391, 5579),
@@ -1104,7 +1104,7 @@ datasets = {
     },
     "Washington SEC": {
         "window": (1512, 25, 15150, 11302),
-        "masks": [ [(14042,6502), (16549,6490), (16563,9079), (14053,9091)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[14042,6502], [16549,6490], [16563,9079], [14053,9091], [14042,6502]]]] } ],
         "geobound": (-79, 36, None, None),
     },
     "Washington SEC Norfolk Inset": {
@@ -1114,7 +1114,7 @@ datasets = {
     },
     "WATRS": {
         "window": (72, 1788, 7167, 8426),
-        "masks": [ [(72,1788), (2803,1788), (2803,2027), (2243,2027), (2243,2316), (562,2316), (562,3229), (72,3229)] ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[72,1788], [2803,1788], [2803,2027], [2243,2027], [2243,2316], [562,2316], [562,3229], [72,3229], [72,1788]]]] } ],
     },
     "Western Aleutian Islands East SEC East": {
         "input_file": "Western Aleutian Islands East SEC.tif",
@@ -1585,17 +1585,8 @@ def rasterize_shape_masks(masks, window):
     # Get the transformation for shape drawing (shapes are specified in the original dataset coordinates)
     shape_transform = rasterio.Affine.translation(window.col_off, window.row_off)
 
-    # Get the mask shapes into a format acceptable to rasterio
-    shapes = [({'type': 'Polygon', 'coordinates': [mask]},0) for mask in masks]
-
-    # Workaround bug: If any shapes have less than 4 points, add the first point to the end to close the polygon
-    # https://github.com/rasterio/rasterio/issues/3279
-    for shape in shapes:
-        if len(shape[0]['coordinates'][0]) < 4:
-            shape[0]['coordinates'][0].append(shape[0]['coordinates'][0][0])
-
     # Rasterize an alpha band based on the shapes
-    return rasterio.features.rasterize(shapes, (window.height, window.width), 255, transform=shape_transform, dtype=numpy.uint8)
+    return rasterio.features.rasterize(masks, (window.height, window.width), 255, transform=shape_transform, dtype=numpy.uint8)
 
 def color_expand(src_data, colormap):
     '''
@@ -1831,19 +1822,19 @@ def build_vrt(vrtfile, files, resolution="average", resampling=None):
             yress.append(dataset.res[1])
 
     # Calculate the spatial extend of the merged dataset
-    left = min(*lefts)
-    bottom = min(*bottoms)
-    right = max(*rights)
-    top = max(*tops)
+    left = min(lefts)
+    bottom = min(bottoms)
+    right = max(rights)
+    top = max(tops)
 
     def mean(l):
         return sum(l) / len(l)
 
     # Calculate the resolution of the merged dataset
     if resolution == "highest":
-        xres, yres = max(*xress), max(*yress)
+        xres, yres = max(xress), max(yress)
     elif resolution == "lowest":
-        xres, yres = min(*xress), min(*yress)
+        xres, yres = min(xress), min(yress)
     elif resolution == "average":
         xres, yres = mean(xress), mean(yress)
     elif isinstance(resolution, tuple):
@@ -2070,10 +2061,10 @@ def main():
     parser.add_argument('--all', action='store_true', help='Generate all tilesets')
     parser.add_argument('--tilesets', nargs='*', help='Specify the tilesets to generate.')
     parser.add_argument('--existing', action='store_true', help='[DEVELOPMENT] Use existing reprojected datasets.')
-    parser.add_argument('--reproject-resampling', default='nearest', help='Specify the resampling method to use when reprojecting the data. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is nearest.')
-    parser.add_argument('--merge-resampling', default='nearest', help='Specify the resampling method to use when merging a tileset. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is nearest.')
-    parser.add_argument('--merge-resolution', default='average', help='Specify the resolution to use when merging a tileset into one resolution, if it is not already set by the tile definition. Default is average.')
-    parser.add_argument('--tile-resampling', default='nearest', help='Specify the resampling method to use when creating the tiles. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is nearest.')
+    parser.add_argument('--reproject-resampling', default='bilinear', help='Specify the resampling method to use when reprojecting the data. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is bilinear.')
+    parser.add_argument('--merge-resampling', default='bilinear', help='Specify the resampling method to use when merging a tileset. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is bilinear.')
+    parser.add_argument('--merge-resolution', default='lowest', help='Specify the resolution to use when merging a tileset into one resolution, if it is not already set by the tile definition. Default is lowest.')
+    parser.add_argument('--tile-resampling', default='bilinear', help='Specify the resampling method to use when creating the tiles. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is bilinear.')
     parser.add_argument('--threads', default=4, type=int, help='Specify the number of threads to use when reprojecting the data. Default is 4.')
     parser.add_argument('--cleanup', action='store_true', help='Remove the temporary directory and its contents after processing.')
     args = parser.parse_args()
@@ -2094,7 +2085,7 @@ def main():
     tilesets = tileset_datasets.keys() if args.all else args.tilesets or []
 
     # Process each tileset worth of data
-    for tileset_name in tilesets:
+    for tileset_name in ["North Atlantic Route Planning Chart"]:
         # Get the list of dataset names required by the tileset and the tileset's zoom level
         tileset_def = tileset_datasets[tileset_name]
 

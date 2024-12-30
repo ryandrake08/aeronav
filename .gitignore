@@ -1,4 +1,6 @@
 env
+mapdata
 *.pstats
 __pycache__
 ._*
+.ignore
