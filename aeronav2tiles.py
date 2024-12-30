@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# pylint: disable=line-too-long, too-many-arguments, too-many-locals, pointless-string-statement
-
 '''
 This script downloads Aeronav raster images from the FAA, unzips them, and
 processes them into a format suitable for use with a web map tile server.
@@ -33,6 +31,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 import numpy
+import rasterio.control
 import rasterio.enums
 import rasterio.features
 import rasterio.transform
@@ -1557,53 +1556,28 @@ tileset_datasets = {
     },
 }
 
-# Major steps in the processing pipeline
+# Preprocessing step
 
-def rasterize_shape_masks(masks, window):
+def expand_to_rgb(filename):
     '''
-    Rasterize a shape mask for a dataset
+    If the file contains a colormap band, expand it to RGB
 
     Parameters
     ----------
-    masks: list
-        A list of masks, where each mask is a list of tuples representing the vertices of a polygon
-        Vertices are given in pixel coordinates, with the origin at the top left of the dataset.
-        For example, two four-sided shapes would look like:
-        [
-          [(x1, y1), (x2, y2), (x3, y3), (x4, y4)],
-          [(x5, y5), (x6, y6), (x7, y7), (x8, y8)]
-        ]
+    filename: str
+        The filename of the dataset to preprocess
 
-    window: Window
-        The window (dataset pixel coordinates) to rasterize the mask into
-
-    Returns
-    -------
-    numpy.ndarray
-        A 2D numpy array with the mask rasterized into it
     '''
-    # Get the transformation for shape drawing (shapes are specified in the original dataset coordinates)
-    shape_transform = rasterio.Affine.translation(window.col_off, window.row_off)
+    with rasterio.open(filename, 'r') as dataset:
+        # If the dataset is not a single paletted band, nothing to do
+        if dataset.count > 1 or dataset.colorinterp[0] != rasterio.enums.ColorInterp.palette:
+            return
 
-    # Rasterize an alpha band based on the shapes
-    return rasterio.features.rasterize(masks, (window.height, window.width), 255, transform=shape_transform, dtype=numpy.uint8)
+        # Read the profile, palette and data
+        profile = dataset.profile
+        colormap = dataset.colormap(1)
+        src_data = dataset.read()
 
-def color_expand(src_data, colormap):
-    '''
-    Expand a single band of paletted data to RGB
-
-    Parameters
-    ----------
-    src_data: numpy.ndarray
-        A 2D numpy array with the paletted data
-    colormap: dict
-        A dictionary mapping palette indexes to RGB values
-
-    Returns
-    -------
-    numpy.ndarray
-        A 3D numpy array with the RGB data
-    '''
     # Create new arrays for the expanded data
     expanded_data = numpy.zeros((3, src_data[0].shape[0], src_data[0].shape[1]), dtype=src_data.dtype)
 
@@ -1615,7 +1589,12 @@ def color_expand(src_data, colormap):
         for iy in range(src_data[0].shape[0]):
             expanded_data[band][iy] = numpy.take(colormap_lookup[band], src_data[0][iy])
 
-    return expanded_data
+    # Write the expanded data back to the dataset
+    profile['count'] = 3
+    with rasterio.open(filename, 'w', **profile) as dataset:
+        dataset.write(expanded_data)
+
+# Major steps in the processing pipeline
 
 def transform_from_gcps(gcps, src_crs, window):
     '''
@@ -1634,18 +1613,17 @@ def transform_from_gcps(gcps, src_crs, window):
     # Coordinate system for raw lat/lon coordinates
     geo_crs = rasterio.crs.CRS.from_epsg(4326)
 
-    # Get the GCPs into separate lists
+    # Get the GCP definitions into separate lists
     xs, ys, lons, lats = zip(*gcps)
 
-    # Adjust the gcp coordinates to the window
-    win_xs = [x - window.col_off for x in xs]
-    win_ys = [y - window.row_off for y in ys]
+    # Adjust the gcp x/y coordinates to the window
+    win_ys, win_xs = [y - window.row_off for y in ys], [x - window.col_off for x in xs]
 
     # Transform the lat/lon coordinates to the dataset CRS
     src_xs, src_ys = rasterio.warp.transform(geo_crs, src_crs, lons, lats)
 
     # Create list of GroundControlPoints mapping win_x, win_y to dst_x, dst_y
-    gcps_src = [rasterio.control.GroundControlPoint(win_y, win_x, src_x, src_y) for win_x, win_y, src_x, src_y in zip(win_xs, win_ys, src_xs, src_ys)]
+    gcps_src = [rasterio.control.GroundControlPoint(*point) for point in zip(win_ys, win_xs, src_xs, src_ys)]
 
     # Return a new transformation from the GCPs
     return rasterio.transform.from_gcps(gcps_src)
@@ -1685,8 +1663,8 @@ def bounds_with_rotation(window, transform):
     top = max(y0, y1, y2, y3)
     return left, bottom, right, top
 
-# Calculate default transform and dimensions for a reprojection, handling antimeridian crossing
-def calculate_default_transform_antimeridian(src_crs, dst_crs, width, height, left, bottom, right, top):
+# Calculate an acceptable resolution for a reprojection, handling antimeridian crossing
+def resolution_for_default_transform_antimeridian(src_crs, dst_crs, width, height, left, bottom, right, top):
     '''
     Wraps rasterio.warp.calculate_default_transform to handle antimeridian crossing
 
@@ -1694,8 +1672,7 @@ def calculate_default_transform_antimeridian(src_crs, dst_crs, width, height, le
     attempts to preserve the whole resolution of the source dataset. This will lead to incorrect results when
     the source dataset crosses the antimeridian.
 
-    This function calculates the correct destination resolution using a false CRS that is centered on the
-    antimeridian, then recalculates the transformation using the correct destination CRS and the known resolution.
+    This function calculates the correct destination resolution using a false CRS that is centered on the antimeridian.
 
     I've only tried this with WebMercator (EPSG:3857) as the destination CRS.
     '''
@@ -1704,15 +1681,12 @@ def calculate_default_transform_antimeridian(src_crs, dst_crs, width, height, le
     crs_parameters['lon_0'] = 180
     false_dst_crs = rasterio.crs.CRS.from_dict(crs_parameters)
 
-    # Calculate dimensions for the dataset based on this false CRS
+    # Calculate transform for the dataset based on this false CRS
     dst_transform, _, _ = rasterio.warp.calculate_default_transform(src_crs, false_dst_crs, width, height, left, bottom, right, top)
 
     # Determine the correct resolution from the returned transformation.
-    # This will not work if the calculated transform contains a rotation, which is not the case for WebMercator.
-    dst_res = (dst_transform.a, dst_transform.a)
-
-    # Recalculate the transformation, specifying the real destination CRS, but using the correct height
-    return rasterio.warp.calculate_default_transform(src_crs, dst_crs, width, height, left, bottom, right, top, resolution=dst_res)
+    # This will likely not work if the calculated transform contains a rotation.
+    return (dst_transform.a, dst_transform.a)
 
 def clip_to_geobounds(geobounds, src_bounds, src_crs, dst_crs, dst_transform):
     '''
@@ -1924,7 +1898,7 @@ def build_vrt(vrtfile, files, resolution="average", resampling=None):
 
     return vrtfile
 
-def process(dataset_name, tmppath, resampling, threads):
+def process(input_full_path, output_full_path, dataset_def, resampling, threads):
     '''
     Process a single dataset, outputting a dataset reprojected to EPSG:3857
 
@@ -1944,52 +1918,27 @@ def process(dataset_name, tmppath, resampling, threads):
     str
         The path to the reprojected dataset
     '''
-    # Get the dataset definition
-    dataset_def = datasets[dataset_name]
+    # Pre-process the file to expand any paletted bands to RGB.
+    # This will overwrite the input file so we don't have to do it again.
+    expand_to_rgb(input_full_path)
+
+    # Open the dataset and read what we need
+    with rasterio.open(input_full_path) as dataset:
+        # Read the profile, crs, and transform
+        profile = dataset.profile
+        src_crs = dataset.crs
+        dataset_transform = dataset.transform
+
+    # Raise ValueError if crs is missing
+    if not src_crs:
+        raise ValueError(f'No projection information found in {dataset.name}')
 
     # Get the clip region as a rasterio window
     window = dataset_def['window']
     window = rasterio.windows.Window(*window)
 
-    # Open the dataset and read what we need
-    input_file = dataset_def.get('input_file', f'{dataset_name}.tif')
-    input_full_path = os.path.join(tmppath, input_file)
-    with rasterio.open(input_full_path) as dataset:
-        # Read the crs and raise ValueError if it is missing
-        src_crs = dataset.crs
-        if not src_crs:
-            raise ValueError(f'No projection information found in {dataset.name}')
-
-        # Store the profile to help build the output dataset
-        profile = dataset.profile
-
-        # Get the colormap if the dataset has one band
-        colormap = dataset.colormap(1) if dataset.count == 1 else None
-
-        # Get transform adjusted for the window
-        dataset_transform = dataset.transform
-
-        # Read all bands from the dataset into an array
-        src_data = dataset.read(window=window)
-
-    # Build an alpha band to clip the dataset to any provided mask shapes
-    masks = dataset_def.get('masks', [])
-    if masks:
-        alpha_data = rasterize_shape_masks(masks, window)
-    else:
-        alpha_data = numpy.ones((window.height, window.width), dtype=numpy.uint8) * 255
-
-    # Color expand paletted data to RGB
-    if colormap:
-        expanded_data = color_expand(src_data, colormap)
-    else:
-        expanded_data = src_data
-
-    # Add the alpha band
-    rgba_data = numpy.append(expanded_data, [alpha_data], axis=0)
-
     # Get the source transform, either from provided GCPs or calculated from the dataset's transform
-    gcps = dataset_def.get('gcps', [])
+    gcps = dataset_def.get('gcps', None)
     if gcps:
         src_transform = transform_from_gcps(gcps, src_crs, window)
     else:
@@ -2001,28 +1950,45 @@ def process(dataset_name, tmppath, resampling, threads):
     # Define the destination coordinate system
     dst_crs = rasterio.crs.CRS.from_epsg(3857)
 
-    # Calculate the size and transform of the reprojected dataset
+    # If the dataset crosses the antimeridian and no resolution is provided, we must calculate a resolution.
+    # GDAL's default method will not work correctly in this case.
     resolution = dataset_def.get('resolution', None)
-    if resolution:
-        dst_transform, dst_width, dst_height = rasterio.warp.calculate_default_transform(src_crs, dst_crs, window.width, window.height, *src_bounds, resolution=resolution)
-    else:
-        antimeridian = dataset_def.get('antimeridian', False)
-        if antimeridian:
-            dst_transform, dst_width, dst_height = calculate_default_transform_antimeridian(src_crs, dst_crs, window.width, window.height, *src_bounds)
-        else:
-            dst_transform, dst_width, dst_height = rasterio.warp.calculate_default_transform(src_crs, dst_crs, window.width, window.height, *src_bounds)
+    antimeridian = dataset_def.get('antimeridian', False)
+    if antimeridian and not resolution:
+        resolution = resolution_for_default_transform_antimeridian(src_crs, dst_crs, window.width, window.height, *src_bounds)
+
+    # Calculate the size and transform of the reprojected dataset
+    dst_transform, dst_width, dst_height = rasterio.warp.calculate_default_transform(src_crs, dst_crs, window.width, window.height, *src_bounds, resolution=resolution)
 
     # If geobounds are specified, we need to further clip the dataset to the specified bounds
     geobounds = dataset_def.get('geobound', None)
     if geobounds:
         dst_transform, dst_width, dst_height = clip_to_geobounds(geobounds, src_bounds, src_crs, dst_crs, dst_transform)
 
+    # Read all bands from the dataset
+    with rasterio.open(input_full_path) as dataset:
+        src_data = dataset.read(window=window)
+
+    # Build an alpha band to clip the dataset to any provided mask shapes
+    masks = dataset_def.get('masks', None)
+    if masks:
+        # Get the transformation for shape drawing (shapes are specified in the original dataset coordinates)
+        shape_transform = rasterio.Affine.translation(window.col_off, window.row_off)
+
+        # Rasterize an alpha band based on the shapes
+        alpha_data = rasterio.features.rasterize(masks, (window.height, window.width), 255, transform=shape_transform, dtype=src_data.dtype)
+    else:
+        # No mask. Entire source dataset is used. Create an alpha band with all values set to 255
+        alpha_data = numpy.ones((window.height, window.width), dtype=src_data.dtype) * 255
+
+    # Add the alpha band to the source data
+    rgba_data = numpy.append(src_data, [alpha_data], axis=0)
+
     # Create new arrays for the reprojected data
     output_data = numpy.zeros((len(rgba_data), dst_height, dst_width), dtype=src_data.dtype)
 
     # Convert resampling method string to rasterio.warp.Resampling enum
-    resampling = 'cubic_spline' if resampling == 'cubicspline' else resampling
-    resampling = getattr(rasterio.warp.Resampling, resampling)
+    resampling = getattr(rasterio.warp.Resampling, 'cubic_spline' if resampling == 'cubicspline' else resampling)
 
     # Reproject each band to WebMercator (EPSG:3857)
     rasterio.warp.reproject(rgba_data, output_data, src_transform, src_crs=src_crs, dst_transform=dst_transform, dst_crs=dst_crs, resampling=resampling, num_threads=threads)
@@ -2038,13 +2004,8 @@ def process(dataset_name, tmppath, resampling, threads):
     })
 
     # Write the reprojected data to disk
-    output_file = f'_{dataset_name}.tif'
-    output_full_path = os.path.join(tmppath, output_file)
     with rasterio.open(output_full_path, 'w', **profile) as dst:
         dst.write(output_data)
-
-    # Return path to the reprojected dataset
-    return output_full_path
 
 def main():
     '''
@@ -2085,7 +2046,7 @@ def main():
     tilesets = tileset_datasets.keys() if args.all else args.tilesets or []
 
     # Process each tileset worth of data
-    for tileset_name in ["North Atlantic Route Planning Chart"]:
+    for tileset_name in tilesets:
         # Get the list of dataset names required by the tileset and the tileset's zoom level
         tileset_def = tileset_datasets[tileset_name]
 
@@ -2095,16 +2056,24 @@ def main():
         # Process each source dataset required by the tileset
         dataset_names = tileset_def['datasets']
         for dataset_name in dataset_names:
-            if args.existing:
-                # Use the existing reprojected dataset
-                reprojected_file = os.path.join(args.tmppath, f'_{dataset_name}.tif')
-            else:
+            # Determine the output file path
+            output_file = f'_{dataset_name}.tif'
+            output_full_path = os.path.join(args.tmppath, output_file)
+
+            if not args.existing:
+                # Get the dataset definition
+                dataset_def = datasets[dataset_name]
+
+                # Determine the input file path
+                input_file = dataset_def.get('input_file', f'{dataset_name}.tif')
+                input_full_path = os.path.join(args.tmppath, input_file)
+
                 # Reproject the dataset and return the path to the reprojected dataset
                 print(f'Processing {dataset_name}')
-                reprojected_file = process(dataset_name, args.tmppath, args.reproject_resampling, args.threads)
+                process(input_full_path, output_full_path, dataset_def, args.reproject_resampling, args.threads)
 
             # Add the reprojected dataset to the list
-            reprojected_files.append(reprojected_file)
+            reprojected_files.append(output_full_path)
 
         # Build a VRT file from the reprojected datasets
         print(f'Building VRT for {tileset_name}')
