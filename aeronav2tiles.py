@@ -75,11 +75,13 @@ datasets = {
         "input_file": "Alaska Wall Planning Chart.tif",
         "window": (14778, 170, 2918, 7417),
         "gcps": [(14830, 356, -135, 55), (16322, 1481, -130, 55), (15198, 3098, -130, 52), (16905, 4174, -125, 52), (16239, 5304, -125, 50)],
+        "resolution": (169.333, 169.333),
     },
     "Alaska Wall Planning Chart East": {
         "input_file": "Alaska Wall Planning Chart.tif",
         "window": (81, 101, 17684, 12284),
         "geobound": (None, None, 180, None),
+        "resolution": (169.333, 169.333),
         "antimeridian": True,
     },
     "Alaska Wall Planning Chart West": {
@@ -87,6 +89,7 @@ datasets = {
         "window": (81, 101, 17684, 12284),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[1371,4970], [2875,4969], [2875,7972], [1371,7973], [1371,4970]]] ,[[[2928,6658], [4278,6658], [4537,7445], [4535,7513], [2928,7513], [2928,6658]]] ,[[[14691,101], [17765,101], [17765,7674], [14691,7674], [14691,101]]] ,[[[8873,10432], [15041,10432], [15041,12385], [8873,12385], [8873,10432]]]] } ],
         "geobound": (-180, None, None, None),
+        "resolution": (169.333, 169.333),
         "antimeridian": True,
     },
     "Alaska Wall Planning Chart Western Aleutian Islands Inset East": {
@@ -94,6 +97,7 @@ datasets = {
         "window": (8961, 10521, 5993, 1793),
         "geobound": (None, None, 180, None),
         "gcps": [(9321, 10705, 173, 53), (10099, 10772, 175, 53), (10880, 10818, 177, 53), (11661, 10840, 179, 53), (12444, 10840, -179, 53), (13225, 10818, -177, 53), (14005, 10773, -175, 53), (14784, 10705, -173, 53), (9190, 11995, 173, 51), (10006, 12066, 175, 51), (10823, 12113, 177, 51), (11642, 12136, 179, 51), (12462, 12136, -179, 51), (13281, 12113, -177, 51), (14098, 12066, -175, 51), (14914, 11995, -173, 51)],
+        "resolution": (169.333, 169.333),
         "antimeridian": True,
     },
     "Alaska Wall Planning Chart Western Aleutian Islands Inset West": {
@@ -101,273 +105,350 @@ datasets = {
         "window": (8961, 10521, 5993, 1793),
         "geobound": (-180, None, None, None),
         "gcps": [(9321, 10705, 173, 53), (10099, 10772, 175, 53), (10880, 10818, 177, 53), (11661, 10840, 179, 53), (12444, 10840, -179, 53), (13225, 10818, -177, 53), (14005, 10773, -175, 53), (14784, 10705, -173, 53), (9190, 11995, 173, 51), (10006, 12066, 175, 51), (10823, 12113, 177, 51), (11642, 12136, 179, 51), (12462, 12136, -179, 51), (13281, 12113, -177, 51), (14098, 12066, -175, 51), (14914, 11995, -173, 51)],
+        "resolution": (169.333, 169.333),
         "antimeridian": True,
     },
     "Albuquerque SEC": {
         "window": (2202, 34, 15698, 11308),
         "geobound": (-109, 32, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Anchorage SEC": {
         "window": (1743, 61, 14877, 11160),
         "geobound": (-151.5, 60, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Anchorage TAC": {
         "window": (3158, 97, 8881, 5810),
+        "resolution": (21.167, 21.167),
     },
     "Atlanta FLY": {
         "window": (1630, 188, 7419, 6960),
+        "resolution": (21.167, 21.167),
     },
     "Atlanta SEC": {
         "window": (2200, 934, 15723, 11176),
         "geobound": (-88, 32, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Atlanta TAC": {
         "window": (1546, 555, 7421, 6962),
+        "resolution": (21.167, 21.167),
     },
     "Baltimore HEL": {
         "window": (3561, 526, 5932, 5544),
+        "resolution": (10.583, 10.583),
     },
     "Baltimore-Washington FLY": {
         "window": (1614, 187, 10413, 8414),
+        "resolution": (21.167, 21.167),
     },
     "Baltimore-Washington TAC": {
         "window": (1612, 184, 10410, 8414),
+        "resolution": (21.167, 21.167),
     },
     "Bethel SEC": {
         "window": (1073, 31, 15593, 12042),
         "geobound": (-173, None, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Billings SEC": {
         "window": (2169, 6, 15701, 12101),
         "geobound": (-109, None, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Boston Downtown HEL": {
         "window": (1549, 293, 7404, 8242),
+        "resolution": (5.292, 5.292),
     },
     "Boston HEL": {
         "window": (1528, 299, 7406, 8242),
+        "resolution": (10.583, 10.583),
     },
     "Boston TAC": {
         "window": (1614, 316, 8908, 8456),
+        "resolution": (21.167, 21.167),
     },
     "Brownsville SEC": {
         "window": (1457, 4, 15145, 11301),
         "geobound": (-103, 24, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Cape Lisburne SEC": {
         "window": (1974, 12, 14586, 11417),
         "geobound": (-171.5, 68, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Caribbean 1 VFR Chart": {
         "window": (1763, 0, 16190, 15240),
         "geobound": (None, 16, None, None),
+        "resolution": (84.667, 84.667),
     },
     "Caribbean 2 VFR Chart": {
         "window": (1975, 0, 15839, 11003),
         "geobound": (None, 14, None, None),
+        "resolution": (84.667, 84.667),
     },
     "Charlotte FLY": {
         "window": (1642, 240, 7401, 6865),
+        "resolution": (21.167, 21.167),
     },
     "Charlotte SEC": {
         "window": (1358, 40, 15342, 11275),
         "geobound": (-82, 32, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Charlotte TAC": {
         "window": (1563, 519, 7401, 6864),
+        "resolution": (21.167, 21.167),
     },
     "Cheyenne SEC": {
         "window": (1620, 0, 16299, 12139),
         "geobound": (-109, 40, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Chicago FLY": {
         "window": (1535, 145, 5898, 5386),
+        "resolution": (21.167, 21.167),
     },
     "Chicago HEL": {
         "window": (1529, 58, 11906, 8812),
+        "resolution": (10.583, 10.583),
     },
     "Chicago O'Hare Inset HEL": {
         "window": (145, 177, 3541, 3883),
+        "resolution": (5.292, 5.292),
     },
     "Chicago SEC": {
         "window": (1640, 841, 16284, 11219),
         "geobound": (-93, 40, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Chicago TAC": {
         "window": (1546, 536, 5897, 5386),
+        "resolution": (21.167, 21.167),
     },
     "Cincinnati FLY": {
         "window": (1549, 147, 7407, 8315),
+        "resolution": (21.167, 21.167),
     },
     "Cincinnati SEC": {
         "window": (2850, 6, 15060, 11364),
         "geobound": (-85, 36, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Cincinnati TAC": {
         "window": (1551, 316, 7402, 8314),
+        "resolution": (21.167, 21.167),
     },
     "Cleveland TAC": {
         "window": (1669, 565, 5909, 5391),
+        "resolution": (21.167, 21.167),
     },
     "Cold Bay SEC": {
         "window": (1623, 4, 14937, 6083),
         "geobound": (-164, None, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Colorado Springs TAC": {
         "window": (3189, 59, 8240, 7645),
+        "resolution": (21.167, 21.167),
     },
     "Dallas-Ft Worth FLY": {
         "window": (1608, 127, 10277, 8468),
+        "resolution": (21.167, 21.167),
     },
     "Dallas-Ft Worth HEL": {
         "window": (1524, 122, 11857, 8713),
+        "resolution": (10.583, 10.583),
     },
     "Dallas-Ft Worth SEC": {
         "window": (2210, 7, 15712, 11306),
         "geobound": (-102, 32, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Dallas-Ft Worth TAC": {
         "window": (1607, 127, 10277, 8468),
+        "resolution": (21.167, 21.167),
     },
     "Dallas-Love Inset HEL": {
         "window": (1992, 371, 5515, 5573),
+        "resolution": (5.292, 5.292),
     },
     "Dawson SEC": {
         "window": (1470, 0, 15113, 11197),
         "geobound": (-145, 64, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Denver FLY": {
         "window": (1597, 325, 7408, 6896),
+        "resolution": (21.167, 21.167),
     },
     "Denver SEC": {
         "window": (1501, 16, 15114, 11854),
         "geobound": (-111, None, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Denver TAC": {
         "window": (1543, 320, 7409, 6896),
+        "resolution": (21.167, 21.167),
     },
     "Detroit FLY": {
         "window": (3071, 232, 7342, 6402),
+        "resolution": (21.167, 21.167),
     },
     "Detroit HEL": {
         "window": (3275, 63, 10156, 8781),
+        "resolution": (10.583, 10.583),
     },
     "Detroit SEC": {
         "window": (1622, 0, 16303, 11336),
         "geobound": (-85, 40, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Detroit TAC": {
         "window": (3082, 84, 7340, 6402),
+        "resolution": (21.167, 21.167),
     },
     "Downtown Manhattan HEL": {
         "window": (1578, 232, 4271, 3958),
+        "resolution": (5.292, 5.292),
     },
     "Dutch Harbor SEC": {
         "window": (1340, 8, 15233, 11283),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[5048,351], [7428,351], [7428,4041], [5048,4041], [5048,351]]] ,[[[10193,332], [13652,332], [13652,3541], [10193,3541], [10193,332]]]] } ],
         "geobound": (-173, 52, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Dutch Harbor SEC Dutch Harbor Inset": {
         "input_file": "Dutch Harbor SEC.tif",
         "window": (10288, 427, 3268, 3018),
         "gcps": [(10356, 470, -167, 54.25), (11896, 475, -166.5, 54.25), (13435, 470, -166, 54.25), (10347, 1785, -167, 54), (11896, 1790, -166.5, 54), (13444, 1785, -166, 54), (10337, 3099, -167, 53.75), (11896, 3104, -166.5, 53.75), (13454, 3099, -166, 53.75)],
+        "resolution": (21.167, 21.167),
     },
     "Dutch Harbor SEC Pribilof Islands Inset": {
         "input_file": "Dutch Harbor SEC.tif",
         "window": (5142, 445, 2192, 3500),
         "gcps": [(5411, 884, -170.5, 57.5), (6119, 886, -170, 57.5), (6827, 884, -169.5, 57.5), (5401, 2199, -170.5, 57), (6119, 2202, -170, 57), (6836, 2199, -169.5, 57), (5391, 3515, -170.5, 56.5), (6119, 3518, -170, 56.5), (6848, 3515, -169.5, 56.5)],
+        "resolution": (42.333, 42.333),
     },
     "Eastern Long Island HEL": {
         "window": (3267, 220, 6893, 3906),
+        "resolution": (10.583, 10.583),
     },
     "El Paso SEC": {
         "window": (1669, 12, 14876, 11273),
         "geobound": (-109, 28, None, None),
+        "resolution": (42.333, 42.333),
     },
     "ENR_A01_ATL": {
         "window": (125, 145, 3751, 3671),
+        "resolution": (23.167, 23.167),
     },
     "ENR_A01_DCA": {
         "window": (125, 205, 9751, 7591),
+        "resolution": (23.167, 23.167),
     },
     "ENR_A01_DET": {
         "window": (125, 145, 3751, 3671),
+        "resolution": (23.167, 23.167),
     },
     "ENR_A01_JAX": {
         "window": (125, 205, 3751, 3671),
+        "resolution": (23.167, 23.167),
     },
     "ENR_A01_MIA": {
         "window": (125, 145, 3751, 3671),
+        "resolution": (23.167, 23.167),
     },
     "ENR_A01_MSP": {
         "window": (125, 205, 3751, 3671),
+        "resolution": (23.167, 23.167),
     },
     "ENR_A01_STL": {
         "window": (125, 205, 3751, 3671),
+        "resolution": (23.167, 23.167),
     },
     "ENR_A02_DEN": {
         "window": (125, 205, 3751, 3671),
+        "resolution": (23.167, 23.167),
     },
     "ENR_A02_DFW": {
         "window": (125, 205, 5751, 7591),
+        "resolution": (23.167, 23.167),
     },
     "ENR_A02_LAX": {
         "window": (125, 145, 7751, 3671),
+        "resolution": (23.167, 23.167),
     },
     "ENR_A02_MKC": {
         "window": (125, 145, 3751, 3671),
+        "resolution": (23.167, 23.167),
     },
     "ENR_A02_ORD": {
         "window": (125, 205, 3751, 7591),
+        "resolution": (23.167, 23.167),
     },
     "ENR_A02_PHX": {
         "window": (125, 205, 3751, 3671),
+        "resolution": (23.167, 23.167),
     },
     "ENR_A02_SFO": {
         "window": (125, 205, 3751, 3671),
+        "resolution": (23.167, 23.167),
     },
     "ENR_AKH01": {
         "window": (2200, 263, 19590, 7471),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[12856,4274], [21790,4272], [21790,7735], [12856,7735], [12856,4274]]]] } ],
         "geobound": (-180, None, None, None),
+        "resolution": (185.200, 185.200),
         "antimeridian": True,
     },
     "ENR_AKH01_SEA": {
         "window": (128, 127, 8728, 3250),
+        "resolution": (185.200, 185.200),
     },
     "ENR_AKH02 East": {
         "input_file": "ENR_AKH02.tif",
         "window": (2205, 265, 19591, 7471),
         "geobound": (None, None, 180, None),
+        "resolution": (185.200, 185.200),
         "antimeridian": True,
     },
     "ENR_AKH02 West": {
         "input_file": "ENR_AKH02.tif",
         "window": (2205, 265, 19591, 7471),
         "geobound": (-180, None, None, None),
+        "resolution": (185.200, 185.200),
         "antimeridian": True,
     },
     "ENR_AKL01": {
         "window": (2205, 274, 19583, 7461),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[7743,4020], [12261,4021], [12261,7735], [7743,7735], [7743,4020]]] ,[[[15188,4216], [21788,4216], [21788,7735], [15187,7735], [15188,4216]]]] } ],
+        "resolution": (185.200, 185.200),
     },
     "ENR_AKL01_JNU": {
         "window": (85, 153, 4171, 3531),
+        "resolution": (46.333, 46.333),
     },
     "ENR_AKL01_VR": {
         "window": (109, 145, 6431, 3349),
+        "resolution": (46.333, 46.333),
     },
     "ENR_AKL02C": {
         "window": (89, 105, 4448, 7470),
+        "resolution": (185.200, 185.200),
     },
     "ENR_AKL02E": {
         "window": (89, 105, 4450, 7471),
+        "resolution": (185.200, 185.200),
     },
     "ENR_AKL02W East": {
         "input_file": "ENR_AKL02W.tif",
         "window": (96, 111, 4466, 7465),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[96,111], [1402,111], [1402,4019], [96,4019], [96,111]]]] } ],
         "geobound": (None, None, 180, None),
+        "resolution": (185.200, 185.200),
         "antimeridian": True,
     },
     "ENR_AKL02W West": {
@@ -375,286 +456,372 @@ datasets = {
         "window": (96, 111, 4466, 7465),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[96,111], [1402,111], [1402,4019], [96,4019], [96,111]]]] } ],
         "geobound": (-180, None, None, None),
+        "resolution": (185.200, 185.200),
         "antimeridian": True,
     },
     "ENR_AKL03": {
         "window": (6085, 265, 15711, 7470),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[6085,265], [7485,265], [7485,4084], [6085,4084], [6085,265]]]] } ],
+        "resolution": (185.200, 185.200),
     },
     "ENR_AKL03_FAI": {
         "window": (86, 105, 5110, 3649),
+        "resolution": (46.333, 46.333),
     },
     "ENR_AKL03_OME": {
         "window": (85, 85, 3711, 3651),
+        "resolution": (46.333, 46.333),
     },
     "ENR_AKL04 West": {
         "input_file": "ENR_AKL04.tif",
         "window": (6529, 269, 15262, 7463),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[6529,269], [10102,269], [10102,3810], [8947,3810], [6529,7239], [6529,269]]]] } ],
         "geobound": (-180, None, None, None),
+        "resolution": (185.200, 185.200),
         "antimeridian": True,
     },
     "ENR_AKL04_ANC": {
         "window": (209, 269, 7713, 7462),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[6853,3631], [7922,3630], [7922,7730], [4351,7730], [4351,7183], [6853,3631]]]] } ],
+        "resolution": (46.333, 46.333),
     },
     "ENR_CA01_ANTIGUA": {
         "window": (22, 124, 5695, 2621),
+        "resolution": (246.750, 246.750),
     },
     "ENR_CA01_BUENOS": {
         "window": (77, 130, 2695, 2615),
+        "resolution": (46.333, 46.333),
     },
     "ENR_CA01_GUAT": {
         "window": (68, 126, 3409, 2623),
+        "resolution": (46.333, 46.333),
     },
     "ENR_CA01_LIMA": {
         "window": (96, 130, 2695, 2621),
+        "resolution": (46.333, 46.333),
     },
     "ENR_CA01_RIO": {
         "window": (113, 130, 2695, 2617),
+        "resolution": (46.333, 46.333),
     },
     "ENR_CA01_SANTIAGO": {
         "window": (122, 130, 2695, 2620),
+        "resolution": (46.333, 46.333),
     },
     "ENR_CA02_BOGOTA": {
         "window": (123, 100, 2695, 2621),
+        "resolution": (46.333, 46.333),
     },
     "ENR_CA02_CENT-PAC": {
         "window": (105, 100, 4189, 5583),
+        "resolution": (246.750, 246.750),
     },
     "ENR_CA02_MEX": {
         "window": (100, 123, 2695, 2624),
+        "resolution": (46.333, 46.333),
     },
     "ENR_CA02_MIA-NAS": {
         "window": (92, 146, 4177, 2622),
+        "resolution": (46.333, 46.333),
     },
     "ENR_CA02_PANAMA": {
         "window": (68, 105, 4177, 2642),
+        "resolution": (46.333, 46.333),
     },
     "ENR_CA03_MEX_BORDER": {
         "window": (102, 126, 2799, 5497),
+        "resolution": (246.750, 246.750),
     },
     "ENR_CA03_PR": {
         "window": (77, 176, 8696, 5507),
+        "resolution": (46.333, 46.333),
     },
     "ENR_CH01": {
         "window": (1652, 184, 11695, 5619),
+        "resolution": (158.200, 158.200),
     },
     "ENR_CH02": {
         "window": (1652, 197, 11695, 5606),
+        "resolution": (158.200, 158.200),
     },
     "ENR_CH07": {
         "window": (1652, 184, 11695, 5619),
+        "resolution": (158.200, 158.200),
     },
     "ENR_CH08": {
         "window": (1652, 197, 11695, 5606),
+        "resolution": (158.200, 158.200),
     },
     "ENR_CL01": {
         "window": (1652, 189, 11695, 5614),
+        "resolution": (214.800, 214.800),
     },
     "ENR_CL02": {
         "window": (1652, 173, 11695, 5630),
+        "resolution": (214.800, 214.800),
     },
     "ENR_CL03": {
         "window": (1652, 197, 11695, 5606),
+        "resolution": (214.800, 214.800),
     },
     "ENR_CL05": {
         "window": (1652, 197, 11695, 5604),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[8599,199], [13347,199], [13347,2262], [10095,2262], [10095,2093], [8599,1293], [8599,199]]]] } ],
+        "resolution": (214.800, 214.800),
     },
     "ENR_CL05 Charleston-Bermuda Inset": {
         "input_file": "ENR_CL05.tif",
         "window": (8702, 200, 4644, 1985),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[8702,200], [13346,200], [13346,2185], [10190,2185], [10190,2056], [8702,1251], [8702,200]]]] } ],
+        "resolution": (214.800, 214.800),
     },
     "ENR_CL06": {
         "window": (1652, 182, 11695, 5640),
+        "resolution": (214.800, 214.800),
     },
     "ENR_H01": {
         "window": (2204, 205, 21691, 7590),
+        "resolution": (92.600, 92.600),
     },
     "ENR_H02": {
         "window": (2105, 205, 19791, 7591),
+        "resolution": (92.600, 92.600),
     },
     "ENR_H03": {
         "window": (2206, 105, 21690, 7691),
+        "resolution": (92.600, 92.600),
     },
     "ENR_H04": {
         "window": (204, 105, 21691, 7630),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[204,3054], [2364,3054], [2364,7735], [204,7735], [204,3054]]]] } ],
+        "resolution": (92.600, 92.600),
     },
     "ENR_H05": {
         "window": (2105, 105, 19791, 7689),
+        "resolution": (92.600, 92.600),
     },
     "ENR_H06": {
         "window": (2105, 105, 19791, 7689),
+        "resolution": (92.600, 92.600),
     },
     "ENR_H07": {
         "window": (2205, 105, 19690, 7631),
+        "resolution": (92.600, 92.600),
     },
     "ENR_H08": {
         "window": (2105, 105, 19791, 7631),
+        "resolution": (92.600, 92.600),
     },
     "ENR_H09": {
         "window": (2205, 105, 19691, 7691),
+        "resolution": (92.600, 92.600),
     },
     "ENR_H10": {
         "window": (2105, 105, 19691, 7691),
+        "resolution": (92.600, 92.600),
     },
     "ENR_H11": {
         "window": (4105, 205, 17691, 7591),
+        "resolution": (92.600, 92.600),
     },
     "ENR_H12": {
         "window": (104, 105, 23791, 7691),
+        "resolution": (92.600, 92.600),
     },
     "ENR_L01": {
         "window": (2204, 265, 19588, 7469),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L02": {
         "window": (2206, 266, 17589, 7470),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L03": {
         "window": (2205, 265, 19591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L04": {
         "window": (4205, 265, 17591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L05": {
         "window": (6205, 264, 15591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L06N": {
         "window": (205, 264, 13591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L06S": {
         "window": (205, 264, 7591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L07": {
         "window": (2204, 265, 19591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L08": {
         "window": (2204, 265, 17591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L09": {
         "window": (2205, 265, 19589, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L10": {
         "window": (4205, 265, 17591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L11": {
         "window": (2205, 265, 19591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L12": {
         "window": (4203, 263, 17594, 7472),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L13": {
         "window": (2205, 265, 19591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L14": {
         "window": (4205, 265, 17589, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L15": {
         "window": (2205, 265, 19591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L16": {
         "window": (4205, 265, 17591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L17": {
         "window": (4205, 265, 17591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L18": {
         "window": (4205, 265, 19591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L19": {
         "window": (2205, 265, 19591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L20": {
         "window": (2205, 265, 17591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L21": {
         "window": (2205, 265, 15591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L22": {
         "window": (205, 265, 21591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L23": {
         "window": (5185, 265, 16611, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L23 Wilmington-Bimini Inset": {
         "input_file": "ENR_L23.tif",
         "window": (2205, 265, 2769, 7471),
         "gcps": [(2398, 461, -81, 35), (3655, 291, -79, 35), (4401, 958, -78, 34), (2683, 2760, -81, 32), (3337, 2675, -80, 32), (4643, 2484, -78, 32), (2552, 7488, -82, 26), (3963, 7312, -80, 26), (4667, 7213, -79, 26)],
+        "resolution": (32.400, 32.400),
     },
     "ENR_L24": {
         "window": (4205, 265, 17591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L25": {
         "window": (2204, 265, 17591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L26": {
         "window": (204, 262, 19591, 7474),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L27": {
         "window": (2205, 265, 19591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L28": {
         "window": (2205, 265, 17591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L29": {
         "window": (2205, 265, 19591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L30": {
         "window": (2205, 265, 19591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L31": {
         "window": (4205, 265, 17591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L32": {
         "window": (4205, 265, 19591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L33": {
         "window": (2206, 265, 15590, 7466),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L34": {
         "window": (205, 260, 23591, 7472),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[21595,260], [23796,260], [23796,4641], [22344,4254], [21738,3121], [21595,260]]]] } ],
+        "resolution": (32.400, 32.400),
     },
     "ENR_L34 Boston-Yarmouth Inset": {
         "input_file": "ENR_L34.tif",
         "window": (21827, 274, 1971, 4151),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[21827,274], [21969,3082], [22502,4080], [23798,4425], [21827,4425], [21827,274]]]] } ],
         "gcps": [(22662, 874, -70, 42), (23666, 1207, -70, 43), (22436, 1608, -69, 42), (23424, 1932, -69, 43), (21969, 3082, -67, 42), (22965, 3387, -67, 43)],
+        "resolution": (32.400, 32.400),
     },
     "ENR_L35": {
         "window": (2205, 265, 15589, 7466),
+        "resolution": (32.400, 32.400),
     },
     "ENR_L36": {
         "window": (205, 265, 21590, 7466),
+        "resolution": (32.400, 32.400),
     },
     "ENR_P01 East": {
         "input_file": "ENR_P01.tif",
         "window": (2204, 254, 15587, 7479),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[2204,4765], [5161,4765], [5161,6436], [7001,6436], [7001,7733], [2204,7733], [2204,4765]]]] } ],
         "geobound": (None, None, 180, None),
+        "resolution": (246.750, 246.750),
         "antimeridian": True,
     },
     "ENR_P01 West": {
         "input_file": "ENR_P01.tif",
         "window": (2204, 254, 15587, 7479),
         "geobound": (-180, None, None, None),
+        "resolution": (246.750, 246.750),
         "antimeridian": True,
     },
     "ENR_P01_GUA": {
         "window": (103, 107, 2794, 2794),
+        "resolution": (32.400, 32.400),
     },
     "ENR_P02": {
         "window": (204, 265, 17591, 7471),
+        "resolution": (32.400, 32.400),
     },
     "Fairbanks SEC": {
         "window": (1510, 33, 15116, 11427),
         "geobound": (-158, 64, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Fairbanks TAC": {
         "window": (3103, 59, 8072, 5704),
+        "resolution": (21.167, 21.167),
     },
     "GOM_CN": {
         "window": (1754, 75, 13922, 12451),
@@ -676,198 +843,245 @@ datasets = {
     "Grand Canyon General Aviation": {
         "window": (3111, 564, 11910, 5364),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[13576,564], [15021,564], [15021,2096], [13578,2099], [13576,564]]]] } ],
+        "resolution": (21.167, 21.167),
     },
     "Grand Canyon General Aviation Marble Canyon Inset": {
         "input_file": "Grand Canyon General Aviation.tif",
         "window": (13653, 640, 1294, 1374),
         "gcps": [(14067, 978, -111.75, 36.833), (13719, 1415, -111.833, 36.75), (14068, 1413, -111.75, 36.75), (14419, 1412, -111.666, 36.75), (14769, 1411, -111.583, 36.75), (14070, 1848, -111.75, 36.666)],
+        "resolution": (21.167, 21.167),
     },
     "Great Falls SEC": {
         "window": (2170, 15, 15700, 12080),
         "geobound": (-117, None, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Green Bay SEC": {
         "window": (2121, 32, 15788, 11668),
         "geobound": (-93, 44, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Halifax SEC": {
         "window": (1338, 0, 15260, 12258),
         "geobound": (-69, 44, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Halifax SEC Yarmouth Extension": {
         "input_file": "Halifax SEC.tif",
         "window": (6239, 11250, 1716, 988),
         "geobound": (-66.4, None, -65.5, 44),
+        "resolution": (42.333, 42.333),
     },
     "Hawaiian Islands SEC": {
         "window": (1845, 1009, 16760, 13718),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[1845,1009], [4862,1009], [1845,5508], [1845,1009]]] ,[[[4862,1009], [18605,1009], [18605,10228], [4862,1009]]] ,[[[18605,10228], [18605,14727], [15588,14727], [18605,10228]]] ,[[[1845,5508], [15588,14727],  [1845,14727], [1845,5508]]]] } ],
+        "resolution": (42.333, 42.333),
     },
     "Honolulu Inset SEC": {
         "window": (68, 47, 5561, 4427),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[5629,3216], [5629,4474], [4200,4474], [5629,3216]]]] } ],
+        "resolution": (21.167, 21.167),
     },
     "Houston FLY": {
         "window": (1537, 497, 7441, 7467),
+        "resolution": (21.167, 21.167),
     },
     "Houston North HEL": {
         "window": (1792, 74, 8555, 7190),
+        "resolution": (10.583, 10.583),
     },
     "Houston SEC": {
         "window": (1673, 23, 14878, 11266),
         "geobound": (-97, 28, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Houston South HEL": {
         "window": (1788, 75, 8557, 7421),
+        "resolution": (10.583, 10.583),
     },
     "Houston TAC": {
         "window": (1537, 497, 7441, 7468),
+        "resolution": (21.167, 21.167),
     },
     "Jacksonville SEC": {
         "window": (1698, 0, 14919, 11315),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[13614,0], [16617,0], [16617,3477], [13614,3477], [13614,0]]] ,[[[2250,7804], [4651,7804], [4651,10641], [2250,10641], [2250,7804]]]] } ],
         "geobound": (-85, 28, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Jacksonville SEC Jacksonville Inset": {
         "input_file": "Jacksonville SEC.tif",
         "window": (13677, 6, 2916, 3346),
         "gcps": [(14794, 270, -81.75, 30.666), (15925, 270, -81.5, 30.666), (14038, 1142, -81.916, 30.5), (14794, 1142, -81.75, 30.5), (15927, 1142, -81.5, 30.5), (14026, 2451, -81.916, 30.25), (14793, 2452, -81.75, 30.25), (15929, 2451, -81.5, 30.25)],
+        "resolution": (21.167, 21.167),
     },
     "Juneau SEC": {
         "window": (871, 59, 15637, 11301),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[871,4217], [1460,4217], [1460,5051], [871,5051], [871,4217]]] ,[[[1588,2705], [4447,2705], [4447,3958], [1588,3958], [1588,2705]]] ,[[[1616,4018], [4227,4018], [4227,5859], [1616,5859], [1616,4018]]]] } ],
         "geobound": (-141, 56, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Juneau SEC Juneau Inset": {
         "input_file": "Juneau SEC.tif",
         "window": (1695, 4107, 2452, 1659),
         "gcps": [(2294, 4536, -134.75, 58.416), (2984, 4527, -134.5, 58.416), (3674, 4516, -134.25, 58.416), (2303, 5412, -134.75, 58.25), (2297, 5404, -134.5, 58.25), (3690, 5392, -134.25, 58.25)],
+        "resolution": (21.167, 21.167),
     },
     "Juneau SEC Seward Glacier Area Inset": {
         "input_file": "Juneau SEC.tif",
         "window": (1686, 2802, 2668, 2964),
         "geobound": (None, 60, None, None),
         "gcps": [(1699, 2938, -141, 60.333), (3002, 2944, -140, 60.333), (4306, 2931, -139, 60.333), (1688, 3814, -141, 60), (3005, 3820, -140, 60), (4322, 3805, -139, 60)],
+        "resolution": (42.333, 42.333),
     },
     "Kansas City SEC": {
         "window": (1518, 39, 15065, 11296),
         "geobound": (-97, 36, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Kansas City TAC": {
         "window": (1554, 728, 7400, 6576),
+        "resolution": (21.167, 21.167),
     },
     "Ketchikan SEC": {
         "window": (1522, 21, 14987, 11246),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[4648,912], [7226,912], [7226,4425], [4648,4425], [4648,912]]]] } ],
         "geobound": (-139, 52, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Ketchikan SEC Ketchikan Inset": {
         "input_file": "Ketchikan SEC.tif",
         "window": (4730, 1007, 2415, 3322),
         "gcps": [(4844, 1615, -132, 55.5), (5590, 1618, -131.75, 55.5), (7083, 1617, -131.25, 55.5), (4836, 2930, -132, 55.25), (6337, 2933, -131.5, 55.25), (7089, 2931, -131.25, 55.25), (4873, 4245, -132, 55), (5584, 4248, -131.75, 55), (7095, 4246, -131.25, 55)],
+        "resolution": (21.167, 21.167),
     },
     "Klamath Falls SEC": {
         "window": (1628, 0, 16278, 12150),
         "geobound": (-125, 40, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Kodiak SEC": {
         "window": (945, 5, 15651, 11358),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[13777,8497], [16467,8497], [16488,11363], [13777,11363], [13777,8497]]] ,[[[945,4266], [1479,4266], [1479,5100], [945,5100], [945,4266]]]] } ],
         "geobound": (-162, 56, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Kodiak SEC Cape Newenham": {
         "input_file": "Kodiak SEC.tif",
         "window": (1218, 3755, 303, 426),
         "geobound": (None, None, -162, None),
+        "resolution": (42.333, 42.333),
     },
     "Kodiak SEC Carter Spit": {
         "input_file": "Kodiak SEC.tif",
         "window": (1540, 2212, 100, 441),
         "geobound": (None, None, -162, None),
+        "resolution": (42.333, 42.333),
     },
     "Kodiak SEC Kodiak Inset": {
         "input_file": "Kodiak SEC.tif",
         "window": (13811, 8576, 2648, 3416),
         "geobound": (None, None, -152, None),
         "gcps": [(14342, 8840, -152.75, 58), (15040, 8840, -152.5, 58), (15740, 8840, -152.25, 58), (14337, 10154, -152.75, 57.75), (15743, 10154, -152.25, 57.75), (14332, 11470, -152.75, 57.5), (15040, 11471, -152.5, 57.5), (15748, 11470, -152.25, 57.5)],
+        "resolution": (21.167, 21.167),
     },
     "Lake Huron SEC": {
         "window": (2116, 28, 15754, 11375),
         "geobound": (-85, 44, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Las Vegas FLY": {
         "window": (3114, 225, 7378, 5389),
+        "resolution": (21.167, 21.167),
     },
     "Las Vegas SEC": {
         "window": (2696, 0, 15153, 11757),
         "geobound": (-118, None, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Las Vegas TAC": {
         "window": (3100, 596, 7378, 5388),
+        "resolution": (21.167, 21.167),
     },
     "Los Angeles East HEL": {
         "window": (1553, 96, 9357, 8743),
+        "resolution": (10.583, 10.583),
     },
     "Los Angeles FLY": {
         "window": (1608, 121, 10206, 5785),
+        "resolution": (21.167, 21.167),
     },
     "Los Angeles SEC": {
         "window": (535, 1373, 16110, 10976),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[535,1373], [1591,1373], [1582,6255], [535,6256], [535,1373]]] ,[[[525,8082], [4688,8087], [4688,12349], [535,12349], [525,8082]]]] } ],
         "geobound": (-122, 32, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Los Angeles TAC": {
         "window": (4672, 105, 10205, 5785),
+        "resolution": (21.167, 21.167),
     },
     "Los Angeles West HEL": {
         "window": (1531, 87, 10388, 8736),
+        "resolution": (10.583, 10.583),
     },
     "Mariana Islands Inset SEC": {
         "window": (27, 34, 6125, 5974),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[27,34], [3689,34], [3687,3235], [2116,4618], [27,4618], [27,34]]]] } ],
+        "resolution": (42.333, 42.333),
     },
     "McGrath SEC": {
         "window": (1710, 0, 14787, 11374),
         "geobound": (-162, 60, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Memphis SEC": {
         "window": (2181, 53, 15713, 11298),
         "geobound": (-95, 32, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Memphis TAC": {
         "window": (1673, 556, 7441, 6821),
+        "resolution": (21.167, 21.167),
     },
     "Miami FLY": {
         "window": (1575, 73, 8885, 8777),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[7282,6938], [10404,6938], [10404,8799], [6359,8799], [6359,7324], [7282,7324], [7282,6938]]]] } ],
+        "resolution": (21.167, 21.167),
     },
     "Miami FLY Florida Keys Inset": {
         "input_file": "Miami FLY.tif",
         "window": (6427, 7000, 3914, 1734),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[6427,7000], [7344,7000], [7344,7386], [6427,7386], [6427,7000]]]] } ],
         "gcps": [(7687, 7329, -81.5, 25), (8879, 7323, -81, 25), (10073, 7311, -80.5, 25), (6494, 8640, -82, 24.5), (7692, 8638, -81.5, 24.5), (8890, 8631, -81, 24.5), (10089, 8619, -80.5, 24.5)],
+        "resolution": (21.167, 21.167),
     },
     "Miami SEC": {
         "window": (1497, 0, 15562, 12018),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[4107,0], [17059,0], [17059,1051], [4089,1041], [4107,0]]]] } ],
         "geobound": (-83, 24, None, 28.5),
+        "resolution": (42.333, 42.333),
     },
     "Miami TAC": {
         "window": (1575, 72, 8890, 8783),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[7285,6943], [10408,6944], [10408,8804], [6361,8803], [6361,7329], [7285,7329], [7285,6943]]]] } ],
+        "resolution": (21.167, 21.167),
     },
     "Miami TAC Florida Keys Inset": {
         "input_file": "Miami TAC.tif",
         "window": (6429, 7006, 3917, 1732),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[6429,7006], [7384,7006], [7384,7392], [6429,7392], [6429,7006]]]] } ],
         "gcps": [(7687, 7329, -81.5, 25), (8879, 7323, -81, 25), (10073, 7311, -80.5, 25), (6494, 8640, -82, 24.5), (7692, 8638, -81.5, 24.5), (8890, 8631, -81, 24.5), (10089, 8619, -80.5, 24.5)],
+        "resolution": (21.167, 21.167),
     },
     "Minneapolis-St Paul TAC": {
         "window": (1801, 556, 5891, 5384),
+        "resolution": (21.167, 21.167),
     },
     "Montreal SEC": {
         "window": (2101, 60, 15762, 11355),
         "geobound": (-77, 44, None, None),
+        "resolution": (42.333, 42.333),
     },
     "NARC": {
         "window": (82, 82, 13525, 9558),
@@ -875,64 +1089,81 @@ datasets = {
     },
     "New Orleans FLY": {
         "window": (1546, 574, 7414, 5389),
+        "resolution": (21.167, 21.167),
     },
     "New Orleans SEC": {
         "window": (1721, 0, 14896, 11289),
         "geobound": (-91, 28, None, None),
+        "resolution": (42.333, 42.333),
     },
     "New Orleans TAC": {
         "window": (1551, 518, 7414, 5389),
+        "resolution": (21.167, 21.167),
     },
     "New York HEL": {
         "window": (2989, 1074, 10407, 7769),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[2989,1074], [8387,1074], [8387,3333], [2989,3315], [2989,1074]]] ,[[[11824,1074], [13396,1074], [13396,3309], [11836,3318], [11824,1074]]] ,[[[2989,5936], [4445,5945], [4445,8843], [2989,8843], [2989,5936]]]] } ],
+        "resolution": (10.583, 10.583),
     },
     "New York SEC": {
         "window": (1605, 0, 16257, 11363),
         "geobound": (-77, 40, None, None),
+        "resolution": (42.333, 42.333),
     },
     "New York TAC": {
         "window": (3061, 568, 8906, 5457),
+        "resolution": (21.167, 21.167),
     },
     "Nome SEC": {
         "window": (883, 0, 15717, 11442),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[2143,104], [4241,105], [4240,3013], [2142,3012], [2143,104]]]] } ],
         "geobound": (-171.5, 64, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Nome SEC Lavrentiya-Provideniya Inset": {
         "input_file": "Nome SEC.tif",
         "window": (2302, 261, 1785, 2580),
         "gcps": [(2708, 313, -173, 66), (3245, 321, -172, 66), (3780, 320, -171, 66), (2678, 1629, -173, 65), (3235, 1637, -172, 65), (3793, 1637, -171, 65), (3228, 2735, -172, 64.166)],
+        "resolution": (42.333, 42.333),
     },
     "Omaha SEC": {
         "window": (1634, 52, 16287, 12090),
         "geobound": (-101, 40, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Orlando FLY": {
         "window": (137, 370, 8751, 7171),
+        "resolution": (21.167, 21.167),
     },
     "Orlando TAC": {
         "window": (3009, 443, 8750, 7170),
+        "resolution": (21.167, 21.167),
     },
     "Philadelphia TAC": {
         "window": (1735, 639, 5905, 5854),
+        "resolution": (21.167, 21.167),
     },
     "Phoenix FLY": {
         "window": (3064, 119, 7407, 6811),
+        "resolution": (21.167, 21.167),
     },
     "Phoenix SEC": {
         "window": (1987, 662, 15898, 11589),
         "geobound": (-116, None, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Phoenix TAC": {
         "window": (3055, 585, 7407, 6810),
+        "resolution": (21.167, 21.167),
     },
     "Pittsburgh TAC": {
         "window": (1620, 548, 5897, 5386),
+        "resolution": (21.167, 21.167),
     },
     "Point Barrow SEC": {
         "window": (709, 22, 15846, 11533),
         "geobound": (-157, 68, None, None),
+        "resolution": (42.333, 42.333),
     },
     "PORC_COMP East": {
         "input_file": "PORC_COMP.tif",
@@ -1001,115 +1232,146 @@ datasets = {
     },
     "Portland TAC": {
         "window": (1845, 3094, 4118, 4288),
+        "resolution": (21.167, 21.167),
     },
     "Puerto Rico-VI TAC": {
         "window": (1489, 68, 16281, 5974),
+        "resolution": (21.167, 21.167),
     },
     "Salt Lake City FLY": {
         "window": (1595, 159, 7408, 6754),
+        "resolution": (21.167, 21.167),
     },
     "Salt Lake City SEC": {
         "window": (1603, 15, 16294, 12085),
         "geobound": (-117, 40, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Salt Lake City TAC": {
         "window": (1593, 699, 7408, 6755),
+        "resolution": (21.167, 21.167),
     },
     "Samoan Islands Inset SEC": {
         "window": (33, 53, 8928, 3877),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[6996,53], [8961,53], [8961,2542], [6996,2542], [6996,53]]]] } ],
+        "resolution": (42.333, 42.333),
     },
     "San Antonio SEC": {
         "window": (1738, 0, 15117, 11290),
         "geobound": (-103, 28, -96.5, None),
+        "resolution": (42.333, 42.333),
     },
     "San Diego FLY": {
         "window": (307, 218, 7411, 5815),
+        "resolution": (21.167, 21.167),
     },
     "San Diego TAC": {
         "window": (4626, 178, 7411, 5816),
+        "resolution": (21.167, 21.167),
     },
     "San Francisco FLY": {
         "window": (3218, 693, 7377, 6158),
+        "resolution": (21.167, 21.167),
     },
     "San Francisco SEC": {
         "window": (1449, 1001, 15160, 11197),
         "geobound": (-125, 36, None, None),
+        "resolution": (42.333, 42.333),
     },
     "San Francisco TAC": {
         "window": (3069, 362, 7377, 6157),
+        "resolution": (21.167, 21.167),
     },
     "Seattle FLY": {
         "window": (1625, 272, 5915, 6920),
+        "resolution": (21.167, 21.167),
     },
     "Seattle SEC": {
         "window": (2155, 0, 15703, 12104),
         "geobound": (-125, None, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Seattle TAC": {
         "window": (1674, 547, 5916, 6919),
+        "resolution": (21.167, 21.167),
     },
     "Seward SEC": {
         "window": (1568, 11, 16290, 6181),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[3152,6104], [17858,6089], [17858,6192], [3152,6192], [3152,6104]]]] } ],
         "geobound": (-152.5, None, None, None),
+        "resolution": (42.333, 42.333),
     },
     "St Louis FLY": {
         "window": (1614, 556, 5900, 5394),
+        "resolution": (21.167, 21.167),
     },
     "St Louis SEC": {
         "window": (2918, 41, 15017, 11336),
         "geobound": (-91, 36, None, None),
+        "resolution": (42.333, 42.333),
     },
     "St Louis TAC": {
         "window": (1561, 560, 5901, 5394),
+        "resolution": (21.167, 21.167),
     },
     "Tampa FLY": {
         "window": (100, 483, 5919, 6902),
+        "resolution": (21.167, 21.167),
     },
     "Tampa TAC": {
         "window": (1531, 484, 5921, 6902),
+        "resolution": (21.167, 21.167),
     },
     "Twin Cities SEC": {
         "window": (2201, 45, 15705, 12087),
         "geobound": (-101, None, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Twin Cities SEC Lake Of The Woods Inset": {
         "input_file": "Twin Cities SEC.tif",
         "window": (233, 9389, 1836, 2272),
         "gcps": [(291, 9476, -95.5, 49.5), (1149, 9479, -95, 49.5), (2008, 9476, -94.5, 49.5), (282, 10792, -95.5, 49), (1149, 10796, -95, 49), (2016, 10793, -94.5, 49)],
+        "resolution": (42.333, 42.333),
     },
     "U.S. Gulf Coast HEL": {
         "window": (1534, 0, 15017, 6601),
         "geobound": (None, 26, None, None),
+        "resolution": (84.667, 84.667),
     },
     "U.S. VFR Wall Planning Chart": {
         "window": (466, 297, 17636, 10698),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[593,7940], [2099,7932], [2116,10939], [601,10947], [593,7940]]]] } ],
+        "resolution": (169.333, 169.333),
     },
     "US_IFR_PLAN_EAST": {
         "window": (2, 260, 9794, 11454),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[2,11714], [5675,11714], [5675,12292], [2,12292], [2,11714]]] ,[[[8326,4794], [9796,3438], [9796,12292], [8326,12292], [8326,4794]]]] } ],
+        "resolution": (246.750, 246.750),
     },
     "US_IFR_PLAN_WEST": {
         "window": (3854, 260, 9794, 12032),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[3854,7477], [12760,11931], [12400,12292], [3854,12292], [3854,7477]]]] } ],
+        "resolution": (246.750, 246.750),
     },
     "Washington HEL": {
         "window": (3029, 314, 10391, 5579),
+        "resolution": (10.583, 10.583),
     },
     "Washington Inset HEL": {
         "window": (50, 142, 2872, 3596),
+        "resolution": (5.292, 5.292),
     },
     "Washington SEC": {
         "window": (1512, 25, 15150, 11302),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[14042,6502], [16549,6490], [16563,9079], [14053,9091], [14042,6502]]]] } ],
         "geobound": (-79, 36, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Washington SEC Norfolk Inset": {
         "input_file": "Washington SEC.tif",
         "window": (14118, 6565, 2426, 2388),
         "gcps": [(14183, 6713, -76.5, 37.166), (15230, 6712, -76.25, 37.166), (16278, 6708, -76, 37.166), (14182, 7586, -76.5, 37), (15232, 7585, -76.25, 37), (16283, 7582, -76, 37), (14181, 8895, -76.5, 36.75), (15235, 8894, -76.25, 36.75), (16289, 8891, -76, 36.75)],
+        "resolution": (21.167, 21.167),
     },
     "WATRS": {
         "window": (72, 1788, 7167, 8426),
@@ -1119,21 +1381,25 @@ datasets = {
         "input_file": "Western Aleutian Islands East SEC.tif",
         "window": (968, 211, 15573, 5902),
         "geobound": (178, 51, 180, None),
+        "resolution": (42.333, 42.333),
         "antimeridian": True,
     },
     "Western Aleutian Islands East SEC West": {
         "input_file": "Western Aleutian Islands East SEC.tif",
         "window": (968, 211, 15573, 5902),
         "geobound": (-180, 51, None, None),
+        "resolution": (42.333, 42.333),
         "antimeridian": True,
     },
     "Western Aleutian Islands West SEC": {
         "window": (1557, 145, 14987, 5888),
         "geobound": (None, 51, None, None),
+        "resolution": (42.333, 42.333),
     },
     "Wichita SEC": {
         "window": (1437, 60, 15204, 11311),
         "geobound": (-104, 36, None, None),
+        "resolution": (42.333, 42.333),
     },
 }
 
