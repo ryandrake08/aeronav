@@ -4,11 +4,10 @@ This script downloads Aeronav raster images from the FAA, unzips them, and
 processes them into a format suitable for use with a web map tile server.
 
 Command Line Arguments:
-    --current: Download the Current data.
-    --preview: Download the Preview data.
     --zippath: Specify the directory to store downloaded Aeronav data.
     --tmppath: Specify the directory to store temporary files (default: /tmp/aeronav2tiles).
     --outpath: Specify the directory to store the output tilesets.
+    --download: Download the current data into zippath from aeronav.faa.gov before processing.
     --all: Generate all tilesets.
     --tilesets: Specify the tilesets to generate.
     --existing: [DEVELOPMENT] Use existing reprojected datasets.
@@ -25,11 +24,16 @@ Raises:
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
+import time
+import urllib.request
+import urllib.parse
 import xml.etree.ElementTree as ET
 import zipfile
 
+import bs4
 import numpy
 import rasterio.control
 import rasterio.enums
@@ -1822,6 +1826,127 @@ tileset_datasets = {
     },
 }
 
+# Download support
+
+_AERONAV_VFR_URL = 'https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/vfr/'
+_AERONAV_IFR_URL = 'https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/ifr/'
+
+def download(url, path='.', filename=None):
+    '''
+    Downloads a file from the given URL and saves it to the specified filename.
+    If the filename is not provided, the file will be saved with the basename of the URL.
+    If the file already exists, the function will add an 'If-Modified-Since' header to the request
+    to avoid downloading the file again if it has not been modified.
+
+    Args:
+        url (str): The URL of the file to download.
+        filename (str, optional): The name of the file to save. Defaults to None.
+
+    Returns:
+        str: The filename of the downloaded file.
+
+    Raises:
+        urllib.error.HTTPError: If an HTTP error occurs other than a 304 Not Modified response.
+    '''
+    # Create a request to retrieve the file
+    request = urllib.request.Request(url)
+
+    # Set filename
+    filename = os.path.join(path, filename or os.path.basename(url))
+
+    # Check if the file already exists on the filesystem and add the If-Modified-Since header to the request
+    if os.path.exists(filename):
+        last_modified_time = os.path.getmtime(filename)
+        last_modified_time_str = time.strftime('%a, %d %b %Y %H:%M:%S GMT', time.gmtime(last_modified_time))
+        request.add_header('If-Modified-Since', last_modified_time_str)
+
+    # Download the file
+    try:
+        with urllib.request.urlopen(request) as response:
+            if response.status == 200:
+                with open(filename, 'wb') as f:
+                    f.write(response.read())
+
+    except urllib.error.HTTPError as e:
+        # Check if the server returned a 304 Not Modified response, if so, just skip the download
+        if e.code != 304:
+            raise
+
+    return filename
+
+def get_current_aeronav_urls(index_url, chart_types):
+    '''
+    Scrapes the aeronav.faa.gov website for the current URLs of the specified chart types.
+    '''
+    # Read the page for scraping
+    response = urllib.request.urlopen(index_url)
+    html = response.read().decode('utf-8')
+    soup = bs4.BeautifulSoup(html, 'html.parser')
+
+    urls = []
+    for chart_type in chart_types:
+        # Each chart type has its own div
+        chart = soup.find('div', id=chart_type)
+        if chart:
+            # Any table describes a set of charts
+            tables = chart.find_all('table')
+            for table in tables:
+                # Each row in the table describes a chart
+                rows = table.find_all('tr')
+                for row in rows:
+                    # The second cell in each row contains the current chart info
+                    cells = row.find_all('td')
+                    if len(cells) >= 2:
+                        # Find all <a> elements in the cell
+                        a_tags = cells[1].find_all('a')
+                        for a_tag in a_tags:
+                            # Check if the link text is 'Geo-TIFF'
+                            if a_tag and a_tag.get_text(strip=True).lower() == 'geo-tiff':
+                                # Finally, there it is
+                                geo_tiff_url = a_tag['href']
+                                urls.append(geo_tiff_url)
+    return urls
+
+def fix_faa_incorrect_urls(urls):
+    '''
+    Fixes incorrect URLs on the aeronav.faa.gov website by finding the most common "before date" part of the URL
+    and using that as the base URL for all URLs. This is necessary because the FAA's web site doesn't always
+    link to the correct file. FAA, get your shit together.
+    '''
+    url_tuples = []
+    date_pattern = re.compile(r'/(\d{2}-\d{2}-\d{4})/')
+
+    # Examine each URL, and find the date in the URL
+    for url in urls:
+        match = date_pattern.search(url)
+        if match:
+            # Store everything up to and including the date, then everything after the date
+            before_date = url[:match.end(1)]
+            after_date = url[match.end(1):]
+            url_tuples.append((before_date, after_date))
+        else:
+            raise ValueError(f"Could not find date in aeronav URL {url}")
+
+    # All "before date" parts should be the same. Tally up the counts of each "before date" part
+    baseurl_counts = {}
+    for before_date, _ in url_tuples:
+        if before_date not in baseurl_counts:
+            baseurl_counts[before_date] = 0
+        baseurl_counts[before_date] += 1
+
+    # If they are not all the same, use the most common one
+    if len(baseurl_counts) > 1:
+        most_common_baseurl = max(baseurl_counts, key=baseurl_counts.get)
+        cleaned_urls = []
+        for before_date, after_date in url_tuples:
+            if before_date != most_common_baseurl:
+                cleaned_urls.append(most_common_baseurl + after_date)
+            else:
+                cleaned_urls.append(before_date + after_date)
+        return cleaned_urls
+    else:
+        return urls
+
 # Preprocessing step
 
 def expand_to_rgb(filename):
@@ -2279,32 +2404,67 @@ def main():
     '''
 
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Download Aeronav data from www.faa.gov and create web map tiles.')
-    parser.add_argument('--current', action='store_true', help='Download the Current data.')
-    parser.add_argument('--preview', action='store_true', help='Download the Preview data.')
+    parser = argparse.ArgumentParser(description='Download Aeronav data from aeronav.faa.gov and create web map tiles.')
+    # Where to put the data
     parser.add_argument('--zippath', help='Specify the directory to store downloaded Aeronav data.')
     parser.add_argument('--tmppath', default='/tmp/aeronav2tiles', help='Specify the directory to store temporary files. Default is /tmp/aeronav2tiles.')
     parser.add_argument('--outpath', help='Specify the directory to store the output tilesets.')
-    parser.add_argument('--all', action='store_true', help='Generate all tilesets')
+    # What to do
+    parser.add_argument('--download', action='store_true', help='Download the Aeronav data from aeronav.faa.gov. If not specified, all zip files must already exist in zippath.')
+    parser.add_argument('--all', action='store_true', help='Generate all tilesets, ignoring the --tilesets argument.')
     parser.add_argument('--tilesets', nargs='*', help='Specify the tilesets to generate.')
+    parser.add_argument('--list-tilesets', action='store_true', help='List the available tilesets.')
     parser.add_argument('--existing', action='store_true', help='[DEVELOPMENT] Use existing reprojected datasets.')
+    parser.add_argument('--cleanup', action='store_true', help='Remove the temporary directory and its contents after all processing.')
+    # How to do it
     parser.add_argument('--reproject-resampling', default='bilinear', help='Specify the resampling method to use when reprojecting the data. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is bilinear.')
     parser.add_argument('--merge-resampling', default='bilinear', help='Specify the resampling method to use when merging a tileset. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is bilinear.')
     parser.add_argument('--merge-resolution', default='lowest', help='Specify the resolution to use when merging a tileset into one resolution, if it is not already set by the tile definition. Default is lowest.')
     parser.add_argument('--tile-resampling', default='bilinear', help='Specify the resampling method to use when creating the tiles. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is bilinear.')
     parser.add_argument('--threads', default=4, type=int, help='Specify the number of threads to use when reprojecting the data. Default is 4.')
-    parser.add_argument('--cleanup', action='store_true', help='Remove the temporary directory and its contents after processing.')
+    parser.add_argument('--quiet', action='store_true', help='Suppress output and progress.')
     args = parser.parse_args()
 
-    # TODO: Downloading. For now, use already downloaded ZIPs
+    # List the available tilesets and exit
+    if args.list_tilesets:
+        for tileset in tileset_datasets.keys():
+            print(f'{tileset}')
+        return
 
-    # Create the temporary directory if it does not exist
-    os.makedirs(args.tmppath, exist_ok=True)
+    # Download the Aeronav data if the download flag is set
+    if(args.download and args.zippath):
+        if not args.quiet:
+            print('Scraping aeronav.faa.gov...')
 
+        # Scrape all chart file URLs
+        vfr_urls = get_current_aeronav_urls(_AERONAV_VFR_URL, ['sectional', 'terminalArea', 'helicopter', 'grandCanyon', 'Planning', 'caribbean'])
+        ifr_urls = get_current_aeronav_urls(_AERONAV_IFR_URL, ['lowsHighsAreas', 'planning', 'caribbean', 'gulf'])
+
+        # aeronav.faa.gov may have some incorrect URLs, so we need to clean them up
+        vfr_urls = fix_faa_incorrect_urls(vfr_urls)
+        ifr_urls = fix_faa_incorrect_urls(ifr_urls)
+
+        # Create the zippath directory if it does not exist
+        os.makedirs(args.zippath, exist_ok=True)
+
+        # Download all the files
+        for url in vfr_urls + ifr_urls:
+            if not args.quiet:
+                print(f'Downloading {url}...')
+            download(url, os.path.join(args.zippath))
+
+    # Unzip the downloaded files
     if args.zippath:
+        # Create the temporary directory if it does not exist
+        os.makedirs(args.tmppath, exist_ok=True)
+
         # Unzip all the files in the specified directory to the temporary directory
         for zip_filename in os.listdir(args.zippath):
             if zip_filename.endswith('.zip'):
+                if not args.quiet:
+                    print(f'Extracting {zip_filename}...')
+
+                # Unzip everything in the zip file
                 with zipfile.ZipFile(os.path.join(args.zippath, zip_filename), 'r') as zip_archive:
                     zip_archive.extractall(args.tmppath)
 
@@ -2313,6 +2473,9 @@ def main():
 
     # Process each tileset worth of data
     for tileset_name in tilesets:
+        if not args.quiet:
+            print(f'Processing tileset {tileset_name}...')
+
         # Get the list of dataset names required by the tileset and the tileset's zoom level
         tileset_def = tileset_datasets[tileset_name]
 
@@ -2322,6 +2485,7 @@ def main():
         # Process each source dataset required by the tileset
         dataset_names = tileset_def['datasets']
         for dataset_name in dataset_names:
+
             # Determine the output file path
             output_file = f'_{dataset_name}.tif'
             output_full_path = os.path.join(args.tmppath, output_file)
@@ -2334,33 +2498,47 @@ def main():
                 input_file = dataset_def.get('input_file', f'{dataset_name}.tif')
                 input_full_path = os.path.join(args.tmppath, input_file)
 
+                if not args.quiet:
+                    print(f'Reprojecting {dataset_name}')
+
                 # Reproject the dataset and return the path to the reprojected dataset
-                print(f'Processing {dataset_name}')
                 process(input_full_path, output_full_path, dataset_def, args.reproject_resampling, args.threads)
 
             # Add the reprojected dataset to the list
             reprojected_files.append(output_full_path)
 
+        if not args.quiet:
+            print(f'Building VRT for {tileset_name}')
+
         # Build a VRT file from the reprojected datasets
-        print(f'Building VRT for {tileset_name}')
         vrt_path = os.path.join(args.tmppath, f'__{tileset_name}.vrt')
         resolution = tileset_def.get('resolution', args.merge_resolution)
         build_vrt(vrt_path, reprojected_files, resolution, args.merge_resampling)
 
+        # Create the tileset from the VRT file
         if args.outpath:
-            tile_path = os.path.join(args.outpath, tileset_name)
+            # Create the output tileset directory if it does not exist
             os.makedirs(tile_path, exist_ok=True)
+            tile_path = os.path.join(args.outpath, tileset_name)
 
             # Get the zoom levels needed for the tileset
             zoom = tileset_def['zoom']
 
+            if not args.quiet:
+                print(f'Building tiles for {tileset_name}')
+
             # Build the tile pyramid from the VRT file
-            # For now, shell out to call gdal2tiles until rasterio supports tile creation
             resampling = 'near' if args.tile_resampling == 'nearest' else args.tile_resampling
-            subprocess.run(['gdal2tiles.py', '-q', '-x', '-z', zoom, '-w', 'leaflet', '-r', resampling, f'--processes={args.threads}', '--tiledriver=WEBP', '--webp-quality=50', vrt_path, tile_path], check=True)
+            quiet = '-q' if args.quiet else ''
+
+            # For now, shell out to call gdal2tiles until rasterio supports tile creation
+            subprocess.run(['gdal2tiles.py', quiet, '-x', '-z', zoom, '-w', 'leaflet', '-r', resampling, f'--processes={args.threads}', '--tiledriver=WEBP', '--webp-quality=50', vrt_path, tile_path], check=True)
 
     # Remove the temporary directory and its contents if remove is True
     if args.cleanup:
+        if not args.quiet:
+            print('Cleaning up temporary files...')
+
         shutil.rmtree(args.tmppath)
 
 if __name__ == '__main__':
