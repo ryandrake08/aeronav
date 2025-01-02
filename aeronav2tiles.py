@@ -29,18 +29,13 @@ import re
 import shutil
 import time
 import urllib.request
-import urllib.parse
 import xml.etree.ElementTree as ET
 import zipfile
 
 import bs4
 import numpy
-import rasterio.control
-import rasterio.enums
-import rasterio.features
-import rasterio.transform
-import rasterio.warp
-import rasterio.windows
+import osgeo_utils.gdal2tiles
+import rasterio
 
 '''
 Dictionary of FAA Aeronav datasets.
@@ -1650,9 +1645,11 @@ def get_current_aeronav_urls(index_url, chart_types):
     '''
     Scrapes the aeronav.faa.gov website for the current URLs of the specified chart types.
     '''
+
     # Read the page for scraping
-    response = urllib.request.urlopen(index_url)
-    html = response.read().decode('utf-8')
+    with urllib.request.urlopen(index_url) as response:
+        html = response.read().decode('utf-8')
+
     soup = bs4.BeautifulSoup(html, 'html.parser')
 
     urls = []
@@ -2252,7 +2249,6 @@ def main():
             quiet = '-q' if args.quiet else ''
 
             # For now, call gdal2tiles until rasterio supports tile creation
-            import osgeo_utils.gdal2tiles
             osgeo_utils.gdal2tiles.main([quiet, '-x', '-z', zoom, '-w', 'leaflet', '-r', resampling, f'--processes={os.cpu_count()}', '--tiledriver=WEBP', vrt_path, tile_path])
 
     # Remove the temporary directory and its contents if remove is True
