@@ -27,7 +27,6 @@ import math
 import os
 import re
 import shutil
-import subprocess
 import time
 import urllib.request
 import urllib.parse
@@ -1129,7 +1128,7 @@ Value: Dictionary of tileset information
 
 tileset_datasets = {
     "VFR Planning Charts": {
-        'tile_path' : 'vfr_planning',
+        "tile_path" : "vfr_planning",
         "zoom": "0-9",
         "maxlod_zoom": 9,
         "datasets": [
@@ -1142,7 +1141,7 @@ tileset_datasets = {
         ],
     },
     "VFR Sectional Charts": {
-        'tile_path' : 'vfr_sectional',
+        "tile_path" : "vfr_sectional",
         "zoom": "10-12",
         "maxlod_zoom": 12,
         "datasets": [
@@ -1216,7 +1215,7 @@ tileset_datasets = {
         ],
     },
     "VFR Sectional Detail Charts": {
-        'tile_path' : 'vfr_sectional',
+        "tile_path" : "vfr_sectional",
         "zoom": "13",
         "maxlod_zoom": 13,
         "datasets": [
@@ -1232,7 +1231,7 @@ tileset_datasets = {
         ],
     },
     "VFR Terminal Area Charts": {
-        'tile_path' : 'vfr_tac',
+        "tile_path" : "vfr_tac",
         "zoom": "13",
         "maxlod_zoom": 13,
         "datasets": [
@@ -1274,7 +1273,7 @@ tileset_datasets = {
         ],
     },
     "VFR Flyway Charts": {
-        'tile_path' : 'vfr_flyway',
+        "tile_path" : "vfr_flyway",
         "zoom": "13",
         "maxlod_zoom": 13,
         "datasets": [
@@ -1303,7 +1302,7 @@ tileset_datasets = {
         ],
     },
     "Helicopter Route Charts": {
-        'tile_path' : 'vfr_helicopter',
+        "tile_path" : "vfr_helicopter",
         "zoom": "14",
         "maxlod_zoom": 14,
         "datasets": [
@@ -1322,7 +1321,7 @@ tileset_datasets = {
         ],
     },
     "Helicopter Route Detail Charts": {
-        'tile_path' : 'vfr_helicopter_inset',
+        "tile_path" : "vfr_helicopter_inset",
         "zoom": "15",
         "maxlod_zoom": 15,
         "datasets": [
@@ -1334,7 +1333,7 @@ tileset_datasets = {
         ],
     },
     "IFR Planning Charts U.S.": {
-        'tile_path' : 'ifr_planning',
+        "tile_path" : "ifr_planning",
         "zoom": "0-9",
         "maxlod_zoom": 9,
         "datasets": [
@@ -1343,7 +1342,7 @@ tileset_datasets = {
         ],
     },
     "IFR Enroute High And Low Altitude Pacific": {
-        'tile_path' : 'ifr_planning',
+        "tile_path" : "ifr_planning",
         "zoom": "0-8",
         "maxlod_zoom": 8,
         "datasets": [
@@ -1352,6 +1351,7 @@ tileset_datasets = {
         ],
     },
     "IFR Enroute High Altitude Alaska": {
+        "tile_path" : "ifr_high_ak",
         "zoom": "0-9",
         "maxlod_zoom": 9,
         "datasets": [
@@ -1361,6 +1361,7 @@ tileset_datasets = {
         ],
     },
     "IFR Enroute High Altitude Alaska Detail": {
+        "tile_path" : "ifr_high_ak_detail",
         "zoom": "0-10",
         "maxlod_zoom": 10,
         "datasets": [
@@ -1368,6 +1369,7 @@ tileset_datasets = {
         ],
     },
     "IFR Enroute High Altitude Caribbean And South America": {
+        "tile_path" : "ifr_high_carib",
         "zoom": "0-11",
         "maxlod_zoom": 11,
         "datasets": [
@@ -1380,6 +1382,7 @@ tileset_datasets = {
         ],
     },
     "IFR Enroute High Altitude U.S.": {
+        "tile_path" : "ifr_high_us",
         "zoom": "0-11",
         "maxlod_zoom": 11,
         "datasets": [
@@ -1398,6 +1401,7 @@ tileset_datasets = {
         ],
     },
     "IFR Enroute Low Altitude Alaska": {
+        "tile_path" : "ifr_low_ak",
         "zoom": "0-10",
         "maxlod_zoom": 10,
         "datasets": [
@@ -1411,6 +1415,7 @@ tileset_datasets = {
         ],
     },
     "IFR Enroute Low Altitude Caribbean And South America": {
+        "tile_path" : "ifr_low_carib",
         "zoom": "0-11",
         "maxlod_zoom": 11,
         "datasets": [
@@ -1423,6 +1428,7 @@ tileset_datasets = {
         ],
     },
     "IFR Enroute Low Altitude Pacific": {
+        "tile_path" : "ifr_low_pac",
         "zoom": "9-11",
         "maxlod_zoom": 11,
         "datasets": [
@@ -1430,6 +1436,7 @@ tileset_datasets = {
         ],
     },
     "IFR Enroute Low Altitude U.S.": {
+        "tile_path" : "ifr_low_us",
         "zoom": "10-12",
         "maxlod_zoom": 12,
         "datasets": [
@@ -1475,6 +1482,7 @@ tileset_datasets = {
         ],
     },
     "IFR Area Charts Alaska": {
+        "tile_path" : "ifr_area_ak",
         "zoom": "11",
         "maxlod_zoom": 11,
         "datasets": [
@@ -1486,6 +1494,7 @@ tileset_datasets = {
         ],
     },
     "IFR Area Charts Caribbean And South America": {
+        "tile_path" : "ifr_area_carib",
         "zoom": "12",
         "maxlod_zoom": 12,
         "datasets": [
@@ -1502,6 +1511,7 @@ tileset_datasets = {
         ],
     },
     "IFR Area Charts Pacific": {
+        "tile_path" : "ifr_area_pac",
         "zoom": "9",
         "maxlod_zoom": 9,
         "datasets": [
@@ -1509,6 +1519,7 @@ tileset_datasets = {
         ],
     },
     "IFR Area Charts U.S.": {
+        "tile_path" : "ifr_area_us",
         "zoom": "13",
         "maxlod_zoom": 13,
         "datasets": [
@@ -1529,6 +1540,7 @@ tileset_datasets = {
         ],
     },
     "North Atlantic Route Planning Chart": {
+        "tile_path" : "narc",
         "zoom": "0-8",
         "maxlod_zoom": 8,
         "datasets": [
@@ -1536,6 +1548,7 @@ tileset_datasets = {
         ],
     },
     "North Pacific Route Planning Chart": {
+        "tile_path" : "porc",
         "zoom": "0-7",
         "maxlod_zoom": 7,
         "datasets": [
@@ -1550,6 +1563,7 @@ tileset_datasets = {
         ],
     },
     "North Pacific Route Planning Detail Chart": {
+        "tile_path" : "porc_detail",
         "zoom": "8",
         "maxlod_zoom": 8,
         "datasets": [
@@ -1564,6 +1578,7 @@ tileset_datasets = {
         ],
     },
     "West Atlantic Route System Planning Chart": {
+        "tile_path" : "watrs",
         "zoom": "0-9",
         "maxlod_zoom": 9,
         "datasets": [
@@ -1571,6 +1586,7 @@ tileset_datasets = {
         ],
     },
     "IFR Gulf Of Mexico Chart": {
+        "tile_path" : "gom",
         "zoom": "0-12",
         "maxlod_zoom": 12,
         "datasets": [
@@ -2001,7 +2017,7 @@ def build_vrt(vrtfile, files):
 
     return vrtfile
 
-def process(input_full_path, output_full_path, dataset_def, resolution, resampling, threads):
+def process(input_full_path, output_full_path, dataset_def, resolution, resampling):
     '''
     Process a single dataset, outputting a dataset reprojected to EPSG:3857
 
@@ -2013,8 +2029,6 @@ def process(input_full_path, output_full_path, dataset_def, resolution, resampli
         The path to the temporary directory
     resampling: str
         The resampling method to use when reprojecting the data. Can be one of nearest, bilinear, cubic, cubicspline, lanczos, average, mode
-    threads: int
-        The number of threads to use when reprojecting the data
 
     Returns
     -------
@@ -2087,7 +2101,7 @@ def process(input_full_path, output_full_path, dataset_def, resolution, resampli
     resampling = getattr(rasterio.warp.Resampling, 'cubic_spline' if resampling == 'cubicspline' else resampling)
 
     # Reproject each band to WebMercator (EPSG:3857)
-    rasterio.warp.reproject(rgba_data, output_data, src_transform, src_crs=src_crs, dst_transform=dst_transform, dst_crs=dst_crs, resampling=resampling, num_threads=threads)
+    rasterio.warp.reproject(rgba_data, output_data, src_transform, src_crs=src_crs, dst_transform=dst_transform, dst_crs=dst_crs, resampling=resampling, num_threads=os.cpu_count())
 
     # Create a new dataset on disk with the reprojected data
     profile.update({
@@ -2209,7 +2223,7 @@ def main():
                     print(f'Reprojecting {dataset_name}')
 
                 # Reproject the dataset and return the path to the reprojected dataset
-                process(input_full_path, output_full_path, dataset_def, resolution, args.reproject_resampling, args.threads)
+                process(input_full_path, output_full_path, dataset_def, resolution, args.reproject_resampling)
 
             # Add the reprojected dataset to the list
             reprojected_files.append(output_full_path)
@@ -2224,8 +2238,8 @@ def main():
         # Create the tileset from the VRT file
         if args.outpath:
             # Create the output tileset directory if it does not exist
+            tile_path = os.path.join(args.outpath, tileset_def['tile_path'])
             os.makedirs(tile_path, exist_ok=True)
-            tile_path = os.path.join(args.outpath, tileset_name)
 
             # Get the zoom levels needed for the tileset
             zoom = tileset_def['zoom']
@@ -2237,8 +2251,9 @@ def main():
             resampling = 'near' if args.tile_resampling == 'nearest' else args.tile_resampling
             quiet = '-q' if args.quiet else ''
 
-            # For now, shell out to call gdal2tiles until rasterio supports tile creation
-            subprocess.run(['gdal2tiles.py', quiet, '-x', '-z', zoom, '-w', 'leaflet', '-r', resampling, f'--processes={args.threads}', '--tiledriver=WEBP', '--webp-quality=50', vrt_path, tile_path], check=True)
+            # For now, call gdal2tiles until rasterio supports tile creation
+            import osgeo_utils.gdal2tiles
+            osgeo_utils.gdal2tiles.main([quiet, '-x', '-z', zoom, '-w', 'leaflet', '-r', resampling, f'--processes={os.cpu_count()}', '--tiledriver=WEBP', vrt_path, tile_path])
 
     # Remove the temporary directory and its contents if remove is True
     if args.cleanup:
