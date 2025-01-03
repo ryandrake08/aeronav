@@ -12,11 +12,10 @@ Command Line Arguments:
     --tilesets: Specify the tilesets to generate.
     --existing: [DEVELOPMENT] Use existing reprojected datasets.
     --resampling: Specify the resampling method to use when reprojecting the data (default: nearest). Can be one of nearest, bilinear, cubic, cubicspline, lanczos, average, mode.
-    --threads: Specify the number of threads to use when reprojecting the data (default: 4).
     --cleanup: Remove the temporary directory and its contents after processing.
 
 Usage:
-    python aeronav2tiles.py --current --zippath /path/to/zips --tmppath /path/to/tmp --outpath /path/to/output --resampling bilinear --threads 8 --cleanup
+    python aeronav2tiles.py --current --zippath /path/to/zips --tmppath /path/to/tmp --outpath /path/to/output --resampling bilinear --cleanup
 
 Raises:
     ValueError: If no projection information is found in the dataset.
@@ -35,7 +34,8 @@ import zipfile
 import bs4
 import numpy
 import osgeo_utils.gdal2tiles
-import rasterio
+import rasterio.features
+import rasterio.warp
 
 '''
 Dictionary of FAA Aeronav datasets.
@@ -70,27 +70,13 @@ datasets = {
         "window": (14778, 170, 2918, 7417),
         "gcps": [(14830, 356, -135, 55), (16322, 1481, -130, 55), (15198, 3098, -130, 52), (16905, 4174, -125, 52), (16239, 5304, -125, 50)],
     },
-    "Alaska Wall Planning Chart East": {
-        "input_file": "Alaska Wall Planning Chart.tif",
-        "window": (81, 101, 17684, 12284),
-        "geobound": (None, None, 180, None),
-    },
-    "Alaska Wall Planning Chart West": {
-        "input_file": "Alaska Wall Planning Chart.tif",
+    "Alaska Wall Planning Chart": {
         "window": (81, 101, 17684, 12284),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[1371,4970], [2875,4969], [2875,7972], [1371,7973], [1371,4970]]] ,[[[2928,6658], [4278,6658], [4537,7445], [4535,7513], [2928,7513], [2928,6658]]] ,[[[14691,101], [17765,101], [17765,7674], [14691,7674], [14691,101]]] ,[[[8873,10432], [15041,10432], [15041,12385], [8873,12385], [8873,10432]]]] } ],
-        "geobound": (-180, None, None, None),
     },
-    "Alaska Wall Planning Chart Western Aleutian Islands Inset East": {
+    "Alaska Wall Planning Chart Western Aleutian Islands Inset": {
         "input_file": "Alaska Wall Planning Chart.tif",
         "window": (8961, 10521, 5993, 1793),
-        "geobound": (None, None, 180, None),
-        "gcps": [(9321, 10705, 173, 53), (10099, 10772, 175, 53), (10880, 10818, 177, 53), (11661, 10840, 179, 53), (12444, 10840, -179, 53), (13225, 10818, -177, 53), (14005, 10773, -175, 53), (14784, 10705, -173, 53), (9190, 11995, 173, 51), (10006, 12066, 175, 51), (10823, 12113, 177, 51), (11642, 12136, 179, 51), (12462, 12136, -179, 51), (13281, 12113, -177, 51), (14098, 12066, -175, 51), (14914, 11995, -173, 51)],
-    },
-    "Alaska Wall Planning Chart Western Aleutian Islands Inset West": {
-        "input_file": "Alaska Wall Planning Chart.tif",
-        "window": (8961, 10521, 5993, 1793),
-        "geobound": (-180, None, None, None),
         "gcps": [(9321, 10705, 173, 53), (10099, 10772, 175, 53), (10880, 10818, 177, 53), (11661, 10840, 179, 53), (12444, 10840, -179, 53), (13225, 10818, -177, 53), (14005, 10773, -175, 53), (14784, 10705, -173, 53), (9190, 11995, 173, 51), (10006, 12066, 175, 51), (10823, 12113, 177, 51), (11642, 12136, 179, 51), (12462, 12136, -179, 51), (13281, 12113, -177, 51), (14098, 12066, -175, 51), (14914, 11995, -173, 51)],
     },
     "Albuquerque SEC": {
@@ -319,20 +305,12 @@ datasets = {
     "ENR_AKH01": {
         "window": (2200, 263, 19590, 7471),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[12856,4274], [21790,4272], [21790,7735], [12856,7735], [12856,4274]]]] } ],
-        "geobound": (-180, None, None, None),
     },
     "ENR_AKH01_SEA": {
         "window": (128, 127, 8728, 3250),
     },
-    "ENR_AKH02 East": {
-        "input_file": "ENR_AKH02.tif",
+    "ENR_AKH02": {
         "window": (2205, 265, 19591, 7471),
-        "geobound": (None, None, 180, None),
-    },
-    "ENR_AKH02 West": {
-        "input_file": "ENR_AKH02.tif",
-        "window": (2205, 265, 19591, 7471),
-        "geobound": (-180, None, None, None),
     },
     "ENR_AKL01": {
         "window": (2205, 274, 19583, 7461),
@@ -350,17 +328,9 @@ datasets = {
     "ENR_AKL02E": {
         "window": (89, 105, 4450, 7471),
     },
-    "ENR_AKL02W East": {
-        "input_file": "ENR_AKL02W.tif",
+    "ENR_AKL02W": {
         "window": (96, 111, 4466, 7465),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[96,111], [1402,111], [1402,4019], [96,4019], [96,111]]]] } ],
-        "geobound": (None, None, 180, None),
-    },
-    "ENR_AKL02W West": {
-        "input_file": "ENR_AKL02W.tif",
-        "window": (96, 111, 4466, 7465),
-        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[96,111], [1402,111], [1402,4019], [96,4019], [96,111]]]] } ],
-        "geobound": (-180, None, None, None),
     },
     "ENR_AKL03": {
         "window": (6085, 265, 15711, 7470),
@@ -372,11 +342,9 @@ datasets = {
     "ENR_AKL03_OME": {
         "window": (85, 85, 3711, 3651),
     },
-    "ENR_AKL04 West": {
-        "input_file": "ENR_AKL04.tif",
+    "ENR_AKL04": {
         "window": (6529, 269, 15262, 7463),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[6529,269], [10102,269], [10102,3810], [8947,3810], [6529,7239], [6529,269]]]] } ],
-        "geobound": (-180, None, None, None),
     },
     "ENR_AKL04_ANC": {
         "window": (209, 269, 7713, 7462),
@@ -449,7 +417,8 @@ datasets = {
     "ENR_CL05 Charleston-Bermuda Inset": {
         "input_file": "ENR_CL05.tif",
         "window": (8702, 200, 4644, 1985),
-        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[8702,200], [13346,200], [13346,2185], [10190,2185], [10190,2056], [8702,1251], [8702,200]]]] } ],
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[8702,1251], [10190,2056], [10190,2185], [8702,2185], [8702,1251]]]] } ],
+        "gcps": [(8797, 432, -82, 33), (11020, 316, -72, 33), (13245, 255, -62, 33), (9067, 1193, -81, 30), (11051, 1092, -72, 30), (13256, 1031, -62, 30), (9988, 1889, -77, 27), (11737, 1814, -69, 27), (13269, 1777, -62, 27)],
     },
     "ENR_CL06": {
         "window": (1652, 182, 11695, 5640),
@@ -614,16 +583,9 @@ datasets = {
     "ENR_L36": {
         "window": (205, 265, 21590, 7466),
     },
-    "ENR_P01 East": {
-        "input_file": "ENR_P01.tif",
+    "ENR_P01": {
         "window": (2204, 254, 15587, 7479),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[2204,4765], [5161,4765], [5161,6436], [7001,6436], [7001,7733], [2204,7733], [2204,4765]]]] } ],
-        "geobound": (None, None, 180, None),
-    },
-    "ENR_P01 West": {
-        "input_file": "ENR_P01.tif",
-        "window": (2204, 254, 15587, 7479),
-        "geobound": (-180, None, None, None),
     },
     "ENR_P01_GUA": {
         "window": (103, 107, 2794, 2794),
@@ -916,60 +878,25 @@ datasets = {
         "window": (709, 22, 15846, 11533),
         "geobound": (-157, 68, None, None),
     },
-    "PORC_COMP East": {
-        "input_file": "PORC_COMP.tif",
-        "window": (62, 63, 17693, 12293),
-        "geobound": (None, None, 180, None),
-    },
-    "PORC_COMP West": {
-        "input_file": "PORC_COMP.tif",
+    "PORC_COMP": {
         "window": (62, 63, 17693, 12293),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[9907,11846], [13344,11846], [13344,10336], [14976,10336], [14976,9665], [16373,9665], [16373, 9931], [17755,9931], [17755,12356], [9907,12356], [9907,11846]]]] } ],
-        "geobound": (-180, None, None, None),
     },
-    "PORC_NE East": {
-        "input_file": "PORC_NE.tif",
+    "PORC_NE": {
         "window": (62, 63, 17693, 12293),
-        "geobound": (None, None, 180, None),
+        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[13453,63], [17755,63], [17755,4140], [16366,4140], [16366,1998], [14734,1998], [14734,488], [13453,488], [13453,63]]]] } ],
     },
-    "PORC_NE West": {
-        "input_file": "PORC_NE.tif",
-        "window": (62, 63, 17693, 12293),
-        "masks": [ { "type": "MultiPolygon", "coordinates": [[[[13453,63], [17755,63], [17755,4140], [16636,4140], [16366,1998], [14734,1998], [14734,488], [13453,488], [13453,63]]]] } ],
-        "geobound": (-180, None, None, None),
-    },
-    "PORC_NW East": {
-        "input_file": "PORC_NW.tif",
+    "PORC_NW": {
         "window": (62, 63, 17693, 12293),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[62,63], [5325,63], [5325,530], [3085,530], [3085,2040], [2843,2040], [2843,3930], [1446,3930], [1446,2445], [62,2445], [62,63]]]] } ],
-        "geobound": (None, None, 180, None),
     },
-    "PORC_NW West": {
-        "input_file": "PORC_NW.tif",
-        "window": (62, 63, 17693, 12293),
-        "geobound": (-180, None, None, None),
-    },
-    "PORC_SE East": {
-        "input_file": "PORC_SE.tif",
-        "window": (62, 63, 17693, 12293),
-        "geobound": (None, None, 180, None),
-    },
-    "PORC_SE West": {
-        "input_file": "PORC_SE.tif",
+    "PORC_SE": {
         "window": (62, 63, 17693, 12293),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[62,6097], [614,6097], [614,9334], [2124,9334], [2124,10966], [3354,10966], [3354,12356], [62,12356], [62,6097]]]] } ],
-        "geobound": (-180, None, None, None),
     },
-    "PORC_SW East": {
-        "input_file": "PORC_SW.tif",
+    "PORC_SW": {
         "window": (62, 63, 17693, 12293),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[14388,10966], [15778,10966], [15778,9334], [17288,9334], [17288,6099], [17755,6099], [17755,12356], [14388,12356], [14388,10966]]]] } ],
-        "geobound": (None, None, 180, None),
-    },
-    "PORC_SW West": {
-        "input_file": "PORC_SW.tif",
-        "window": (62, 63, 17693, 12293),
-        "geobound": (-180, None, None, None),
     },
     "Portland TAC": {
         "window": (1845, 3094, 4118, 4288),
@@ -1060,7 +987,7 @@ datasets = {
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[593,7940], [2099,7932], [2116,10939], [601,10947], [593,7940]]]] } ],
     },
     "US_IFR_PLAN_EAST": {
-        "window": (2, 260, 9794, 11454),
+        "window": (2, 260, 9794, 12032),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[2,11714], [5675,11714], [5675,12292], [2,12292], [2,11714]]] ,[[[8326,4794], [9796,3438], [9796,12292], [8326,12292], [8326,4794]]]] } ],
     },
     "US_IFR_PLAN_WEST": {
@@ -1087,15 +1014,9 @@ datasets = {
         "window": (72, 1788, 7167, 8426),
         "masks": [ { "type": "MultiPolygon", "coordinates": [[[[72,1788], [2803,1788], [2803,2027], [2243,2027], [2243,2316], [562,2316], [562,3229], [72,3229], [72,1788]]]] } ],
     },
-    "Western Aleutian Islands East SEC East": {
-        "input_file": "Western Aleutian Islands East SEC.tif",
+    "Western Aleutian Islands East SEC": {
         "window": (968, 211, 15573, 5902),
-        "geobound": (178, 51, 180, None),
-    },
-    "Western Aleutian Islands East SEC West": {
-        "input_file": "Western Aleutian Islands East SEC.tif",
-        "window": (968, 211, 15573, 5902),
-        "geobound": (-180, 51, None, None),
+        "geobound": (178, 51, None, None),
     },
     "Western Aleutian Islands West SEC": {
         "window": (1557, 145, 14987, 5888),
@@ -1129,10 +1050,8 @@ tileset_datasets = {
         "datasets": [
             "Alaska Wall Planning Chart British Columbia Coast Inset",
             "U.S. VFR Wall Planning Chart",
-            "Alaska Wall Planning Chart West",
-            "Alaska Wall Planning Chart East",
-            "Alaska Wall Planning Chart Western Aleutian Islands Inset West",
-            "Alaska Wall Planning Chart Western Aleutian Islands Inset East",
+            "Alaska Wall Planning Chart",
+            "Alaska Wall Planning Chart Western Aleutian Islands Inset",
         ],
     },
     "VFR Sectional Charts": {
@@ -1185,8 +1104,7 @@ tileset_datasets = {
             "Montreal SEC",
             "Halifax SEC",
             "Halifax SEC Yarmouth Extension",
-            "Western Aleutian Islands East SEC West",
-            "Western Aleutian Islands East SEC East",
+            "Western Aleutian Islands East SEC",
             "Western Aleutian Islands West SEC",
             "Dutch Harbor SEC",
             "Dutch Harbor SEC Pribilof Islands Inset",
@@ -1341,8 +1259,7 @@ tileset_datasets = {
         "zoom": "0-8",
         "maxlod_zoom": 8,
         "datasets": [
-            "ENR_P01 East",
-            "ENR_P01 West",
+            "ENR_P01",
         ],
     },
     "IFR Enroute High Altitude Alaska": {
@@ -1351,8 +1268,7 @@ tileset_datasets = {
         "maxlod_zoom": 9,
         "datasets": [
             "ENR_AKH01",
-            "ENR_AKH02 East",
-            "ENR_AKH02 West",
+            "ENR_AKH02",
         ],
     },
     "IFR Enroute High Altitude Alaska Detail": {
@@ -1403,10 +1319,9 @@ tileset_datasets = {
             "ENR_AKL01",
             "ENR_AKL02C",
             "ENR_AKL02E",
-            "ENR_AKL02W East",
-            "ENR_AKL02W West",
+            "ENR_AKL02W",
             "ENR_AKL03",
-            "ENR_AKL04 West",
+            "ENR_AKL04",
         ],
     },
     "IFR Enroute Low Altitude Caribbean And South America": {
@@ -1547,14 +1462,7 @@ tileset_datasets = {
         "zoom": "0-7",
         "maxlod_zoom": 7,
         "datasets": [
-            "PORC_NE East",
-            "PORC_NE West",
-            "PORC_NW East",
-            "PORC_NW West",
-            "PORC_SE East",
-            "PORC_SE West",
-            "PORC_SW East",
-            "PORC_SW West",
+            "PORC_COMP",
         ],
     },
     "North Pacific Route Planning Detail Chart": {
@@ -1562,14 +1470,10 @@ tileset_datasets = {
         "zoom": "8",
         "maxlod_zoom": 8,
         "datasets": [
-            "PORC_NE East",
-            "PORC_NE West",
-            "PORC_NW East",
-            "PORC_NW West",
-            "PORC_SE East",
-            "PORC_SE West",
-            "PORC_SW East",
-            "PORC_SW West",
+            "PORC_NE",
+            "PORC_NW",
+            "PORC_SE",
+            "PORC_SW",
         ],
     },
     "West Atlantic Route System Planning Chart": {
@@ -2131,11 +2035,11 @@ def main():
     parser.add_argument('--tilesets', nargs='*', help='Specify the tilesets to generate.')
     parser.add_argument('--list-tilesets', action='store_true', help='List the available tilesets.')
     parser.add_argument('--existing', action='store_true', help='[DEVELOPMENT] Use existing reprojected datasets.')
+    parser.add_argument('--single', help='[DEVELOPMENT] Process a single dataset.')
     parser.add_argument('--cleanup', action='store_true', help='Remove the temporary directory and its contents after all processing.')
     # How to do it
     parser.add_argument('--reproject-resampling', default='bilinear', help='Specify the resampling method to use when reprojecting the data. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is bilinear.')
     parser.add_argument('--tile-resampling', default='bilinear', help='Specify the resampling method to use when creating the tiles. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is bilinear.')
-    parser.add_argument('--threads', default=4, type=int, help='Specify the number of threads to use when reprojecting the data. Default is 4.')
     parser.add_argument('--quiet', action='store_true', help='Suppress output and progress.')
     args = parser.parse_args()
 
@@ -2146,7 +2050,7 @@ def main():
         return
 
     # Download the Aeronav data if the download flag is set
-    if(args.download and args.zippath):
+    if args.download and args.zippath:
         if not args.quiet:
             print('Scraping aeronav.faa.gov...')
 
@@ -2181,6 +2085,30 @@ def main():
                 # Unzip everything in the zip file
                 with zipfile.ZipFile(os.path.join(args.zippath, zip_filename), 'r') as zip_archive:
                     zip_archive.extractall(args.tmppath)
+
+    # Process a single dataset if the single argument is set
+    if args.single:
+        # Get the dataset definition
+        dataset_def = datasets[args.single]
+
+        # Determine the input file path
+        input_file = dataset_def.get('input_file', f'{args.single}.tif')
+        input_full_path = os.path.join(args.tmppath, input_file)
+
+        # Determine the output file path
+        output_file = f'_{args.single}.tif'
+        output_full_path = os.path.join(args.tmppath, output_file)
+
+        # Find the tileset_def that contains this dataset
+        tileset_def = next(tileset_def for tileset_def in tileset_datasets.values() if args.single in tileset_def['datasets'])
+
+        # Calculate the reprojection resolution for this tileset. Always derived from a zoom level so no resampling is needed when merging.
+        maxlod_zoom = tileset_def['maxlod_zoom']
+        resolution = 2 * math.pi * 6378137 / 256 / 2 ** maxlod_zoom
+
+        # Reproject the dataset
+        process(input_full_path, output_full_path, dataset_def, resolution, args.reproject_resampling)
+        return
 
     # Determine which tilesets to generate
     tilesets = tileset_datasets.keys() if args.all else args.tilesets or []
