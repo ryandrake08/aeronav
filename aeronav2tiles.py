@@ -1210,7 +1210,7 @@ tileset_datasets = {
         ],
     },
     "IFR Enroute High And Low Altitude Pacific": {
-        "tile_path" : "ifr_planning",
+        "tile_path" : "ifr_pacific",
         "zoom": "0-8",
         "maxlod_zoom": 8,
         "datasets": [
@@ -1228,7 +1228,7 @@ tileset_datasets = {
     },
     "IFR Enroute High Altitude Alaska Detail": {
         "tile_path" : "ifr_high_ak_detail",
-        "zoom": "0-10",
+        "zoom": "10",
         "maxlod_zoom": 10,
         "datasets": [
             "ENR_AKH01_SEA",
@@ -1236,8 +1236,8 @@ tileset_datasets = {
     },
     "IFR Enroute High Altitude Caribbean And South America": {
         "tile_path" : "ifr_high_carib",
-        "zoom": "0-11",
-        "maxlod_zoom": 11,
+        "zoom": "0-10",
+        "maxlod_zoom": 10,
         "datasets": [
             "ENR_CH02",
             "ENR_CA03_MEX_BORDER",
@@ -1302,7 +1302,7 @@ tileset_datasets = {
     },
     "IFR Enroute Low Altitude U.S.": {
         "tile_path" : "ifr_low_us",
-        "zoom": "10-12",
+        "zoom": "0-12",
         "maxlod_zoom": 12,
         "datasets": [
             "ENR_L23 Wilmington-Bimini Inset",
