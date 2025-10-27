@@ -1951,6 +1951,7 @@ def process(input_full_path, output_full_path, dataset_def, resolution, resampli
 
     # Rasterize an alpha band based on the shapes
     alpha_data = rasterio.features.rasterize([shape], (window.height, window.width), transform=shape_transform, default_value=255, dtype='uint8')
+
     # Add the alpha band to the source data
     rgba_data = numpy.append(src_data, [alpha_data], axis=0)
 
@@ -1979,7 +1980,122 @@ def process(input_full_path, output_full_path, dataset_def, resolution, resampli
 
 def main():
     '''
-    Main function to download Aeronav data from www.faa.gov and create web map tiles.
+    Main function to download Aeronav data from www.faa.gov and create web map tiles. How this works:
+
+    1. Download the Aeronav data from www.faa.gov
+
+        Arguments used: --zippath, --download
+
+        First things first, get the raw data from the FAA. There are separate URLs for VFR and IFR data, and each URL
+        points to a web page with links to the actual data files. We scrape these URLs for the correct ZIP files,
+        and download them to a permanent source directory.
+
+    2. Unzip the downloaded files
+
+        Arguments used: --zippath, --tmppath
+
+        The ZIP files contain a bunch of GeoTIFF files, which we extract to a temporary directory.
+
+    3. Choose which tilesets to generate
+
+        Arguments used: --all, --tilesets
+
+        The main organizational unit for our output tiles is the "tileset". Each tileset is a collection of related
+        datasets that represent a chart series. All data in a given tileset is to be mosaiced together in the final
+        map, and each tileset can be enabled or disabled separately. This program defines the following tilesets:
+
+            VFR Planning Charts
+            VFR Sectional Charts
+            VFR Sectional Detail Charts
+            VFR Terminal Area Charts
+            VFR Flyway Charts
+            Helicopter Route Charts
+            Helicopter Route Detail Charts
+            IFR Planning Charts U.S.
+            IFR Enroute High And Low Altitude Pacific
+            IFR Enroute High Altitude Alaska
+            IFR Enroute High Altitude Alaska Detail
+            IFR Enroute High Altitude Caribbean And South America
+            IFR Enroute High Altitude U.S.
+            IFR Enroute Low Altitude Alaska
+            IFR Enroute Low Altitude Caribbean And South America
+            IFR Enroute Low Altitude Pacific
+            IFR Enroute Low Altitude U.S.
+            IFR Area Charts Alaska
+            IFR Area Charts Caribbean And South America
+            IFR Area Charts Pacific
+            IFR Area Charts U.S.
+            North Atlantic Route Planning Chart
+            North Pacific Route Planning Chart
+            North Pacific Route Planning Detail Chart
+            West Atlantic Route System Planning Chart
+            IFR Gulf Of Mexico Chart
+
+        Importantly, each tileset has a range of zoom levels at which the data will be visible, and the output map
+        tiles are converted to the resolution of each tileset's maximum zoom level. This means that merging datasets
+        within the same tileset requires no resampling, and that building the tiles for the highest level of detail
+        requires no resampling, either.
+
+    4. Process each dataset within the chosen tilesets
+
+        Steps 4a through 4d are applied to each dataset in the chosen tilesets. A "dataset" represents a single
+        chunk of data to include in the map for each tileset. Most datasets correspond 1:1 with the input GeoTIFF
+        files, but some datasets represent subsets of a GeoTIFF file. For example, the "IFR High Altitude U.S."
+        tileset includes the following datasets:
+
+            ENR_H01
+            ENR_H02
+            ENR_H03
+            ENR_H04
+            ENR_H05
+            ENR_H06
+            ENR_H07
+            ENR_H08
+            ENR_H09
+            ENR_H10
+            ENR_H11
+            ENR_H12
+
+        Each of those datasets correspond to a single GeoTIFF file from the FAA.
+
+    4a. Expand all input files to RGB if they contain a colormap band
+
+        Some files, as downloaded from the FAA, contain a single band with a colormap palette. We need to expand
+        these to three bands (RGB) so that they can be reprojected and tiled properly. If we didn't do this, or
+        did this after reprojection, the resulting colors would be incorrect. This step is done only if needed, and
+        is done in-place with the original files overwritten. Therefore, subsequent runs of this program do not
+        need to repeat this (io-expensive) step.
+
+    4b. Clip invalid data from the datasets
+
+        Each dataset is a rasterized paper chart, and as such, contains descriptive material, ledgends, insets, and
+        other non-map data. We use hard-coded polygons to clip this data out of the datasets. Clipping reduces the
+        size of the final map tiles and allows all datasets in a tileset to seamlessly blend together. Clipping is
+        done both in pixel coordinates and (in some cases) in Lat/Lon coordinates.
+
+    4c. Re-georeference some of the datasets
+
+        The GeoTIFF files from the FAA are georeferenced, but we also take data from insets within those files, and
+        these insets are not georeferenced. We use hard coded Ground Control Points (GCPs) to georeference these.
+
+    4d. Reproject the datasets to EPSG:3857
+
+        Arguments used: --reproject-resampling
+
+        The FAA data is in a variety of projections, so we reproject everything to Web Mercator (EPSG:3857)
+
+    5. Combine each tileset's datasets into a single file
+
+        We use a single .vrt file for each tileset, since from now on we treat all datasets in a tileset as a single
+        entity. The .vrt file is a virtual raster file that points to all the individual datasets in the tileset.
+
+    6. Generate map tiles for each tileset
+
+        Arguments used: --outpath, --tile-resampling
+
+        Finally, we generate map tiles for each tileset, for each zoom level, and save each tileset's tiles to a
+        separate directory. We currently just call in to the GDAL2Tiles.py script for this, which is part of GDAL.
+
     '''
 
     # Parse command line arguments
