@@ -27,6 +27,7 @@ import os
 import re
 import shutil
 import time
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
@@ -34,6 +35,8 @@ import zipfile
 import bs4
 import numpy
 import rasterio.control
+import rasterio.crs
+import rasterio.enums
 import rasterio.features
 import rasterio.transform
 import rasterio.warp
@@ -1564,7 +1567,7 @@ def fix_faa_incorrect_urls(urls):
 
     # If they are not all the same, use the most common one
     if len(baseurl_counts) > 1:
-        most_common_baseurl = max(baseurl_counts, key=baseurl_counts.get)
+        most_common_baseurl = max(baseurl_counts, key=lambda x: baseurl_counts[x])
         cleaned_urls = []
         for before_date, after_date in url_tuples:
             if before_date != most_common_baseurl:
@@ -1636,10 +1639,11 @@ def transform_from_gcps(gcps, src_crs):
     geo_crs = rasterio.crs.CRS.from_epsg(4326)
 
     # Get the GCP definitions into separate lists
-    xs, ys, lons, lats = zip(*gcps)
+    gcp_tuple = zip(*gcps)
+    xs, ys, lons, lats = gcp_tuple  # type: ignore[misc]
 
     # Transform the lat/lon coordinates to the dataset CRS
-    src_xs, src_ys = rasterio.warp.transform(geo_crs, src_crs, lons, lats)
+    src_xs, src_ys = rasterio.warp.transform(geo_crs, src_crs, lons, lats)  # type: ignore[assignment]
 
     # Create list of GroundControlPoints mapping win_x, win_y to dst_x, dst_y
     gcps_src = [rasterio.control.GroundControlPoint(*point) for point in zip(ys, xs, src_xs, src_ys)]
@@ -1722,7 +1726,7 @@ def clip_to_geobounds(geobounds, src_bounds, src_crs, dst_crs, dst_transform):
     dst_bounds = rasterio.warp.transform_bounds(geo_crs, dst_crs, *clip_geobounds)
 
     # Get the window corresponding to the clipped bounds
-    dst_window = rasterio.windows.from_bounds(*dst_bounds, dst_transform)
+    dst_window = rasterio.windows.from_bounds(*dst_bounds, dst_transform)  # type: ignore[call-arg]
 
     # Update the transform to reflect the clipped bounds
     dst_transform = rasterio.windows.transform(dst_window, dst_transform)
@@ -1837,8 +1841,8 @@ def build_vrt(vrtfile, files):
     # Add each file's bands to the VRT
     for file in files:
         with rasterio.open(file) as dataset:
-            src = rasterio.windows.Window(0, 0, dataset.width, dataset.height)
-            dst = rasterio.windows.from_bounds(*dataset.bounds, transform)
+            src = rasterio.windows.Window(0, 0, dataset.width, dataset.height)  # type: ignore[call-arg]
+            dst = rasterio.windows.from_bounds(*dataset.bounds, transform)  # type: ignore[call-arg]
 
         for i in indexes:
             # Build the Source element. No resampling needed as the source and destination resolutions are the same
@@ -1915,7 +1919,7 @@ def process(input_full_path, output_full_path, dataset_def, resolution, resampli
     top = min(pt[1] for pt in outer_ring)
     right = max(pt[0] for pt in outer_ring)
     bottom = max(pt[1] for pt in outer_ring)
-    window = rasterio.windows.Window(left, top, right-left, bottom-top)
+    window = rasterio.windows.Window(left, top, right-left, bottom-top)  # type: ignore[call-arg]
 
     # Override the dataset's transform if GCPs are provided
     gcps = dataset_def.get('gcps', None)
@@ -1933,6 +1937,9 @@ def process(input_full_path, output_full_path, dataset_def, resolution, resampli
 
     # Calculate the size and transform of the reprojected dataset
     dst_transform, dst_width, dst_height = rasterio.warp.calculate_default_transform(src_crs, dst_crs, window.width, window.height, *src_bounds, resolution=resolution)
+
+    # Ensure dst_width and dst_height are integers (they should be from calculate_default_transform)
+    assert isinstance(dst_width, int) and isinstance(dst_height, int)
 
     # If geobounds are specified, we need to further clip the dataset to the specified bounds
     geobounds = dataset_def.get('geobound', None)
@@ -1962,7 +1969,7 @@ def process(input_full_path, output_full_path, dataset_def, resolution, resampli
     resampling = getattr(rasterio.warp.Resampling, 'cubic_spline' if resampling == 'cubicspline' else resampling)
 
     # Reproject each band to WebMercator (EPSG:3857)
-    rasterio.warp.reproject(rgba_data, output_data, src_transform, src_crs=src_crs, dst_transform=dst_transform, dst_crs=dst_crs, resampling=resampling, num_threads=os.cpu_count())
+    rasterio.warp.reproject(rgba_data, output_data, src_transform, src_crs=src_crs, dst_transform=dst_transform, dst_crs=dst_crs, resampling=resampling, num_threads=os.cpu_count() or 1)
 
     # Create a new dataset on disk with the reprojected data
     profile.update({
