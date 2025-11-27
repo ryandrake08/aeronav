@@ -1,4 +1,4 @@
 beautifulsoup4
 numpy
 rasterio
-gdal
+gdal<=3.10.2

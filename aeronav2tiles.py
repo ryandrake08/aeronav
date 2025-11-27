@@ -11,7 +11,9 @@ Command Line Arguments:
     --all: Generate all tilesets.
     --tilesets: Specify the tilesets to generate.
     --existing: [DEVELOPMENT] Use existing reprojected datasets.
-    --resampling: Specify the resampling method to use when reprojecting the data (default: nearest). Can be one of nearest, bilinear, cubic, cubicspline, lanczos, average, mode.
+    --epsg: Specify the destination EPSG code (default: 3857 for Web Mercator).
+    --reproject-resampling: Specify the resampling method to use when reprojecting the data (default: bilinear). Can be one of nearest, bilinear, cubic, cubicspline, lanczos, average, mode.
+    --tile-resampling: Specify the resampling method to use when creating tiles (default: bilinear).
     --cleanup: Remove the temporary directory and its contents after processing.
 
 Usage:
@@ -1462,17 +1464,18 @@ _AERONAV_IFR_URL = 'https://www.faa.gov/air_traffic/flight_info/aeronav/digital_
 
 def download(url, path='.', filename=None):
     '''
-    Downloads a file from the given URL and saves it to the specified filename.
+    Downloads a file from the given URL and saves it to the specified path and filename.
     If the filename is not provided, the file will be saved with the basename of the URL.
     If the file already exists, the function will add an 'If-Modified-Since' header to the request
     to avoid downloading the file again if it has not been modified.
 
     Args:
         url (str): The URL of the file to download.
-        filename (str, optional): The name of the file to save. Defaults to None.
+        path (str, optional): The directory path to save the file. Defaults to '.'.
+        filename (str, optional): The name of the file to save. Defaults to None (uses basename of URL).
 
     Returns:
-        str: The filename of the downloaded file.
+        str: The full path of the downloaded file.
 
     Raises:
         urllib.error.HTTPError: If an HTTP error occurs other than a 304 Not Modified response.
@@ -1688,7 +1691,7 @@ def bounds_with_rotation(window, transform):
 
 def clip_to_geobounds(geobounds, src_bounds, src_crs, dst_crs, dst_transform):
     '''
-    Calculate the clipped bounds and dimensions for a reprojection to EPSG:3857, based on the geobounds specified in Lat/Lon
+    Calculate the clipped bounds and dimensions for a reprojection based on the geobounds specified in Lat/Lon
 
     Parameters
     ----------
@@ -1706,7 +1709,7 @@ def clip_to_geobounds(geobounds, src_bounds, src_crs, dst_crs, dst_transform):
     Returns
     -------
     dst_transform: Affine
-        The destination transformation
+        The destination transformation adjusted for the clipped bounds
     dst_width: int
         The width of the clipped destination dataset
     dst_height: int
@@ -1722,7 +1725,7 @@ def clip_to_geobounds(geobounds, src_bounds, src_crs, dst_crs, dst_transform):
     # Replace any None values in our input geobounds with the calculated values
     clip_geobounds = tuple(clip or bnd for clip, bnd in zip(geobounds, src_geobounds))
 
-    # Calculate clipped bounds in WebMercator (EPSG:3857)
+    # Calculate clipped bounds in destination CRS
     dst_bounds = rasterio.warp.transform_bounds(geo_crs, dst_crs, *clip_geobounds)
 
     # Get the window corresponding to the clipped bounds
@@ -1877,23 +1880,53 @@ def build_vrt(vrtfile, files):
 
     return vrtfile
 
-def process(input_full_path, output_full_path, dataset_def, resolution, resampling):
+def calculate_resolution_for_zoom(zoom_level, epsg_code):
     '''
-    Process a single dataset, outputting a dataset reprojected to EPSG:3857
+    Calculate the resolution in meters per pixel for a given zoom level and EPSG code.
+
+    This calculation is based on the standard web map tile pyramid, where the world
+    is divided into 256x256 pixel tiles, with 2^zoom tiles at each zoom level.
 
     Parameters
     ----------
-    dataset_name: str
-        The name of the dataset to process
-    tmppath: str
-        The path to the temporary directory
-    resampling: str
-        The resampling method to use when reprojecting the data. Can be one of nearest, bilinear, cubic, cubicspline, lanczos, average, mode
+    zoom_level: int
+        The zoom level (0 = world, higher = more detailed)
+    epsg_code: int
+        The EPSG code of the coordinate system (e.g., 3857 for Web Mercator, 3395 for Mercator)
 
     Returns
     -------
-    str
-        The path to the reprojected dataset
+    float
+        The resolution in meters per pixel
+    '''
+    # Use WGS84 equatorial radius for both Web Mercator (3857) and Mercator (3395)
+    # Both projections use the same basic calculation for resolution at zoom levels
+    earth_radius = 6378137  # WGS84 equatorial radius in meters
+    return 2 * math.pi * earth_radius / 256 / 2 ** zoom_level
+
+def process(input_full_path, output_full_path, dataset_def, resolution, resampling, dst_epsg=3857):
+    '''
+    Process a single dataset, outputting a dataset reprojected to the specified EPSG coordinate system
+
+    Parameters
+    ----------
+    input_full_path: str
+        The full path to the input dataset
+    output_full_path: str
+        The full path to the output reprojected dataset
+    dataset_def: dict
+        The dataset definition containing mask, gcps, and geobound information
+    resolution: float
+        The target resolution in meters per pixel
+    resampling: str
+        The resampling method to use when reprojecting the data. Can be one of nearest, bilinear, cubic, cubicspline, lanczos, average, mode
+    dst_epsg: int
+        The destination EPSG code (default: 3857 for Web Mercator)
+
+    Returns
+    -------
+    None
+        The reprojected dataset is written to output_full_path
     '''
     # Pre-process the file to expand any paletted bands to RGB.
     # This will overwrite the input file so we don't have to do it again.
@@ -1933,7 +1966,7 @@ def process(input_full_path, output_full_path, dataset_def, resolution, resampli
     src_transform = rasterio.windows.transform(window, dataset_transform)
 
     # Define the destination coordinate system
-    dst_crs = rasterio.crs.CRS.from_epsg(3857)
+    dst_crs = rasterio.crs.CRS.from_epsg(dst_epsg)
 
     # Calculate the size and transform of the reprojected dataset
     dst_transform, dst_width, dst_height = rasterio.warp.calculate_default_transform(src_crs, dst_crs, window.width, window.height, *src_bounds, resolution=resolution)
@@ -1968,7 +2001,7 @@ def process(input_full_path, output_full_path, dataset_def, resolution, resampli
     # Convert resampling method string to rasterio.warp.Resampling enum
     resampling = getattr(rasterio.warp.Resampling, 'cubic_spline' if resampling == 'cubicspline' else resampling)
 
-    # Reproject each band to WebMercator (EPSG:3857)
+    # Reproject each band to the destination CRS
     rasterio.warp.reproject(rgba_data, output_data, src_transform, src_crs=src_crs, dst_transform=dst_transform, dst_crs=dst_crs, resampling=resampling, num_threads=os.cpu_count() or 1)
 
     # Create a new dataset on disk with the reprojected data
@@ -2085,11 +2118,12 @@ def main():
         The GeoTIFF files from the FAA are georeferenced, but we also take data from insets within those files, and
         these insets are not georeferenced. We use hard coded Ground Control Points (GCPs) to georeference these.
 
-    4d. Reproject the datasets to EPSG:3857
+    4d. Reproject the datasets to the destination CRS
 
-        Arguments used: --reproject-resampling
+        Arguments used: --reproject-resampling, --epsg
 
-        The FAA data is in a variety of projections, so we reproject everything to Web Mercator (EPSG:3857)
+        The FAA data is in a variety of projections, so we reproject everything to the destination
+        coordinate system specified by --epsg (default: 3857 for Web Mercator)
 
     5. Combine each tileset's datasets into a single file
 
@@ -2120,6 +2154,7 @@ def main():
     parser.add_argument('--single', help='[DEVELOPMENT] Process a single dataset.')
     parser.add_argument('--cleanup', action='store_true', help='Remove the temporary directory and its contents after all processing.')
     # How to do it
+    parser.add_argument('--epsg', type=int, default=3857, help='Specify the destination EPSG code for the output tiles. Default is 3857 (Web Mercator). Common alternatives: 3395 (Mercator).')
     parser.add_argument('--reproject-resampling', default='bilinear', help='Specify the resampling method to use when reprojecting the data. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is bilinear.')
     parser.add_argument('--tile-resampling', default='bilinear', help='Specify the resampling method to use when creating the tiles. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is bilinear.')
     parser.add_argument('--quiet', action='store_true', help='Suppress output and progress.')
@@ -2144,7 +2179,7 @@ def main():
         vfr_urls = fix_faa_incorrect_urls(vfr_urls)
         ifr_urls = fix_faa_incorrect_urls(ifr_urls)
 
-        # Create the zippath directory if it does not exist
+        # Create the  directory if it does not exist
         os.makedirs(args.zippath, exist_ok=True)
 
         # Download all the files
@@ -2191,7 +2226,7 @@ def main():
         # Derived from a zoom level so highest level of detail tiles require no resampling and
         # simple resampling can be used when making tile pyramids.
         maxlod_zoom = tileset_def['maxlod_zoom']
-        resolution = 2 * math.pi * 6378137 / 256 / 2 ** maxlod_zoom
+        resolution = calculate_resolution_for_zoom(maxlod_zoom, args.epsg)
 
         # Create a list to hold the file paths of the reprojected datasets
         reprojected_files = []
@@ -2220,7 +2255,7 @@ def main():
                     print(f'Reprojecting {dataset_name}')
 
                 # Reproject the dataset and return the path to the reprojected dataset
-                process(input_full_path, output_full_path, dataset_def, resolution, args.reproject_resampling)
+                process(input_full_path, output_full_path, dataset_def, resolution, args.reproject_resampling, args.epsg)
 
             # Add the reprojected dataset to the list
             reprojected_files.append(output_full_path)
@@ -2248,9 +2283,18 @@ def main():
             resampling = 'near' if args.tile_resampling == 'nearest' else args.tile_resampling
             quiet = '-q' if args.quiet else ''
 
+            # Determine the profile based on EPSG code
+            # For Mercator-based projections (3857, 3395), use 'mercator' profile
+            # gdal2tiles defaults to 'mercator' for EPSG:3857, but we need to be explicit
+            if args.epsg in [3857, 3395]:
+                profile = 'mercator'
+            else:
+                # For other EPSG codes, use 'raster' profile (no specific tile scheme)
+                profile = 'raster'
+
             # For now, call gdal2tiles until rasterio supports tile creation
             import osgeo_utils.gdal2tiles
-            osgeo_utils.gdal2tiles.main([quiet, '-x', '-z', zoom, '-w', 'leaflet', '-r', resampling, f'--processes={os.cpu_count()}', '--tiledriver=WEBP', vrt_path, tile_path])
+            osgeo_utils.gdal2tiles.main([quiet, '-x', '-z', zoom, '-w', 'leaflet', '-p', profile, '-r', resampling, f'--processes={os.cpu_count()}', '--tiledriver=WEBP', vrt_path, tile_path])
 
     # Remove the temporary directory and its contents if remove is True
     if args.cleanup:
