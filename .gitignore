@@ -1,4 +1,5 @@
-env
+env*
+.vscode
 mapdata
 *.pstats
 __pycache__
