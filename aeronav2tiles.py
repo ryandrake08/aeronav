@@ -2258,29 +2258,21 @@ def main():
     else:
         tilesets = []
 
-    # Process each tileset worth of data
-    for tileset_name in tilesets:
-        if not args.quiet:
-            print(f'Processing tileset {tileset_name}...')
+    # Phase 1: Collect all work items from all tilesets
+    all_work_items = []
+    tileset_reprojected_files = {}  # tileset_name -> list of reprojected file paths
 
-        # Get the list of dataset names required by the tileset and the tileset's zoom level
+    for tileset_name in tilesets:
         tileset_def = tileset_datasets[tileset_name]
 
-        # Calculate the reprojection resolution for this tileset.
-        # Always the same for all datasets in a tileset, so merging requires no resampling.
-        # Derived from a zoom level so highest level of detail tiles require no resampling and
-        # simple resampling can be used when making tile pyramids.
+        # Calculate the reprojection resolution for this tileset
         maxlod_zoom = tileset_def['maxlod_zoom']
         resolution = calculate_resolution_for_zoom(maxlod_zoom, args.epsg)
 
-        # Collect work items for parallel processing and output paths
         reprojected_files = []
-        work_items = []
-
-        # Process each source dataset required by the tileset
         dataset_names = tileset_def['datasets']
-        for dataset_name in dataset_names:
 
+        for dataset_name in dataset_names:
             # If we are only doing a single dataset, skip the rest
             if args.single and args.single != dataset_name:
                 continue
@@ -2297,54 +2289,78 @@ def main():
                 input_file = dataset_def.get('input_file', f'{dataset_name}.tif')
                 input_full_path = os.path.join(args.tmppath, input_file)
 
-                # Collect work item for parallel processing
-                work_items.append({
+                # Collect work item for parallel processing (include resolution)
+                all_work_items.append({
                     'dataset_name': dataset_name,
                     'input_full_path': input_full_path,
                     'output_full_path': output_full_path,
                     'dataset_def': dataset_def,
+                    'resolution': resolution,
                 })
 
-            # Add the reprojected dataset to the list
             reprojected_files.append(output_full_path)
 
-        # Process datasets in parallel
-        if work_items:
-            # Pre-expand all unique input files to RGB in parallel
-            unique_inputs = list(set(item['input_full_path'] for item in work_items))
-            if not args.quiet:
-                print(f'Expanding {len(unique_inputs)} input files to RGB using {args.expand_workers} parallel processes')
-            expand_work_items = [(f, args.quiet) for f in unique_inputs]
-            with ProcessPoolExecutor(max_workers=args.expand_workers) as executor:
-                list(executor.map(expand_to_rgb, expand_work_items))
+        tileset_reprojected_files[tileset_name] = reprojected_files
 
-            # Reproject all datasets in parallel
-            # Calculate threads per process to maximize CPU usage
-            concurrent_processes = min(args.reproject_workers, len(work_items))
-            num_threads = max(1, cpu_count // concurrent_processes)
+    # Phase 2: Process all datasets from all tilesets in one batch
+    if all_work_items:
+        # Sort work items by estimated work (largest first) to reduce straggler effect
+        # Use mask area if available, otherwise fall back to file dimensions
+        def estimate_work(item):
+            mask = item['dataset_def'].get('mask')
+            if mask:
+                outer_ring = mask[0]
+                width = max(pt[0] for pt in outer_ring) - min(pt[0] for pt in outer_ring)
+                height = max(pt[1] for pt in outer_ring) - min(pt[1] for pt in outer_ring)
+                return width * height
+            else:
+                with rasterio.open(item['input_full_path']) as ds:
+                    return ds.width * ds.height
 
-            if not args.quiet:
-                print(f'Reprojecting {len(work_items)} datasets using {concurrent_processes} parallel processes ({num_threads} threads each)')
-            with ProcessPoolExecutor(max_workers=args.reproject_workers) as executor:
-                futures = []
-                for item in work_items:
-                    future = executor.submit(
-                        process,
-                        item['input_full_path'],
-                        item['output_full_path'],
-                        item['dataset_def'],
-                        resolution,
-                        args.reproject_resampling,
-                        args.epsg,
-                        num_threads=num_threads,
-                        dataset_name=item['dataset_name'],
-                        quiet=args.quiet,
-                    )
-                    futures.append(future)
+        all_work_items.sort(key=estimate_work, reverse=True)
 
-                # Wait for all futures to complete
-                for future in futures:
-                    future.result()  # Raises any exception that occurred
+        # Pre-expand all unique input files to RGB in parallel
+        unique_inputs = list(set(item['input_full_path'] for item in all_work_items))
+        if not args.quiet:
+            print(f'Expanding {len(unique_inputs)} input files to RGB using {args.expand_workers} parallel processes')
+        expand_work_items = [(f, args.quiet) for f in unique_inputs]
+        with ProcessPoolExecutor(max_workers=args.expand_workers) as executor:
+            list(executor.map(expand_to_rgb, expand_work_items))
+
+        # Reproject all datasets in parallel
+        concurrent_processes = min(args.reproject_workers, len(all_work_items))
+        num_threads = max(1, cpu_count // concurrent_processes)
+
+        if not args.quiet:
+            print(f'Reprojecting {len(all_work_items)} datasets using {concurrent_processes} parallel processes ({num_threads} threads each)')
+        with ProcessPoolExecutor(max_workers=args.reproject_workers) as executor:
+            futures = []
+            for item in all_work_items:
+                future = executor.submit(
+                    process,
+                    item['input_full_path'],
+                    item['output_full_path'],
+                    item['dataset_def'],
+                    item['resolution'],
+                    args.reproject_resampling,
+                    args.epsg,
+                    num_threads=num_threads,
+                    dataset_name=item['dataset_name'],
+                    quiet=args.quiet,
+                )
+                futures.append(future)
+
+            # Wait for all futures to complete
+            for future in futures:
+                future.result()  # Raises any exception that occurred
+
+    # Phase 3: Build VRTs and generate tiles for each tileset
+    for tileset_name in tilesets:
+        tileset_def = tileset_datasets[tileset_name]
+        reprojected_files = tileset_reprojected_files[tileset_name]
+
+        if not reprojected_files:
+            continue
 
         if not args.quiet:
             print(f'Building VRT for {tileset_name}')
