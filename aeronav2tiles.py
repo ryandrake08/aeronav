@@ -1585,11 +1585,21 @@ def fix_faa_incorrect_urls(urls):
 # ZIP extraction
 
 def extract_zip(args_tuple):
-    '''Extract a single zip file to a destination directory'''
+    '''Extract a single zip file to a destination directory, skipping if all files already exist'''
     zip_path, zip_filename, dest_path, quiet = args_tuple
+    zip_full_path = os.path.join(zip_path, zip_filename)
+
+    # Check if all files in the zip already exist in the destination
+    with zipfile.ZipFile(zip_full_path, 'r') as zip_archive:
+        members = zip_archive.namelist()
+        all_exist = all(os.path.exists(os.path.join(dest_path, member)) for member in members if not member.endswith('/'))
+
+    if all_exist:
+        return zip_filename
+
     if not quiet:
         print(f'  Extracting {zip_filename}')
-    with zipfile.ZipFile(os.path.join(zip_path, zip_filename), 'r') as zip_archive:
+    with zipfile.ZipFile(zip_full_path, 'r') as zip_archive:
         zip_archive.extractall(dest_path)
     if not quiet:
         print(f'  Extracted {zip_filename}')
