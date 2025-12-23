@@ -33,6 +33,7 @@ import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
+from concurrent.futures import ProcessPoolExecutor
 
 import bs4
 import numpy
@@ -1581,22 +1582,41 @@ def fix_faa_incorrect_urls(urls):
     else:
         return urls
 
+# ZIP extraction
+
+def extract_zip(args_tuple):
+    '''Extract a single zip file to a destination directory'''
+    zip_path, zip_filename, dest_path, quiet = args_tuple
+    if not quiet:
+        print(f'  Extracting {zip_filename}')
+    with zipfile.ZipFile(os.path.join(zip_path, zip_filename), 'r') as zip_archive:
+        zip_archive.extractall(dest_path)
+    if not quiet:
+        print(f'  Extracted {zip_filename}')
+    return zip_filename
+
 # Preprocessing step
 
-def expand_to_rgb(filename):
+def expand_to_rgb(args_tuple):
     '''
     If the file contains a colormap band, expand it to RGB
 
     Parameters
     ----------
-    filename: str
-        The filename of the dataset to preprocess
+    args_tuple: tuple
+        A tuple of (filename, quiet) where filename is the path to the dataset
 
     '''
+    filename, quiet = args_tuple
+    basename = os.path.basename(filename)
+
     with rasterio.open(filename, 'r') as dataset:
         # If the dataset is not a single paletted band, nothing to do
         if dataset.count > 1 or dataset.colorinterp[0] != rasterio.enums.ColorInterp.palette:
             return
+
+        if not quiet:
+            print(f'  Expanding {basename}')
 
         # Read the profile, palette and data
         profile = dataset.profile
@@ -1618,6 +1638,9 @@ def expand_to_rgb(filename):
     profile['count'] = 3
     with rasterio.open(filename, 'w', **profile) as dataset:
         dataset.write(expanded_data)
+
+    if not quiet:
+        print(f'  Expanded {basename}')
 
 # Major steps in the processing pipeline
 
@@ -1904,7 +1927,7 @@ def calculate_resolution_for_zoom(zoom_level, epsg_code):
     earth_radius = 6378137  # WGS84 equatorial radius in meters
     return 2 * math.pi * earth_radius / 256 / 2 ** zoom_level
 
-def process(input_full_path, output_full_path, dataset_def, resolution, resampling, dst_epsg=3857):
+def process(input_full_path, output_full_path, dataset_def, resolution, resampling, dst_epsg=3857, num_threads=None, dataset_name=None, quiet=False):
     '''
     Process a single dataset, outputting a dataset reprojected to the specified EPSG coordinate system
 
@@ -1922,15 +1945,23 @@ def process(input_full_path, output_full_path, dataset_def, resolution, resampli
         The resampling method to use when reprojecting the data. Can be one of nearest, bilinear, cubic, cubicspline, lanczos, average, mode
     dst_epsg: int
         The destination EPSG code (default: 3857 for Web Mercator)
+    num_threads: int or None
+        Number of threads for reprojection (default: None uses os.cpu_count())
+    dataset_name: str or None
+        Name of the dataset for progress reporting
+    quiet: bool
+        If True, suppress progress output
 
     Returns
     -------
     None
         The reprojected dataset is written to output_full_path
     '''
-    # Pre-process the file to expand any paletted bands to RGB.
-    # This will overwrite the input file so we don't have to do it again.
-    expand_to_rgb(input_full_path)
+    if num_threads is None:
+        num_threads = os.cpu_count() or 1
+
+    if not quiet:
+        print(f'  Reprojecting {dataset_name}')
 
     # Open the dataset and read what we need
     with rasterio.open(input_full_path) as dataset:
@@ -2002,7 +2033,7 @@ def process(input_full_path, output_full_path, dataset_def, resolution, resampli
     resampling = getattr(rasterio.warp.Resampling, 'cubic_spline' if resampling == 'cubicspline' else resampling)
 
     # Reproject each band to the destination CRS
-    rasterio.warp.reproject(rgba_data, output_data, src_transform, src_crs=src_crs, dst_transform=dst_transform, dst_crs=dst_crs, resampling=resampling, num_threads=os.cpu_count() or 1)
+    rasterio.warp.reproject(rgba_data, output_data, src_transform, src_crs=src_crs, dst_transform=dst_transform, dst_crs=dst_crs, resampling=resampling, num_threads=num_threads)
 
     # Create a new dataset on disk with the reprojected data
     profile.update({
@@ -2017,6 +2048,9 @@ def process(input_full_path, output_full_path, dataset_def, resolution, resampli
     # Write the reprojected data to disk
     with rasterio.open(output_full_path, 'w', **profile) as dst:
         dst.write(output_data)
+
+    if not quiet:
+        print(f'  Reprojected {dataset_name}')
 
 def main():
     '''
@@ -2158,7 +2192,15 @@ def main():
     parser.add_argument('--reproject-resampling', default='bilinear', help='Specify the resampling method to use when reprojecting the data. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is bilinear.')
     parser.add_argument('--tile-resampling', default='bilinear', help='Specify the resampling method to use when creating the tiles. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is bilinear.')
     parser.add_argument('--quiet', action='store_true', help='Suppress output and progress.')
+    # Parallel processing
+    parser.add_argument('--zip-workers', type=int, default=os.cpu_count(), help=f'Parallel workers for zip extraction. Default: {os.cpu_count()}')
+    parser.add_argument('--expand-workers', type=int, default=os.cpu_count(), help=f'Parallel workers for RGB expansion. Default: {os.cpu_count()}')
+    parser.add_argument('--reproject-workers', type=int, default=os.cpu_count(), help=f'Parallel workers for reprojection. Default: {os.cpu_count()}.')
+    parser.add_argument('--tile-workers', type=int, default=os.cpu_count(), help=f'Parallel workers for tile generation. Default: {os.cpu_count()}.')
     args = parser.parse_args()
+
+    # Number of CPUs present
+    cpu_count = os.cpu_count() or 1
 
     # List the available tilesets and exit
     if args.list_tilesets:
@@ -2193,15 +2235,18 @@ def main():
         # Create the temporary directory if it does not exist
         os.makedirs(args.tmppath, exist_ok=True)
 
-        # Unzip all the files in the specified directory to the temporary directory
-        for zip_filename in os.listdir(args.zippath):
-            if zip_filename.endswith('.zip') and not zip_filename.startswith('._'):
-                if not args.quiet:
-                    print(f'Extracting {zip_filename}...')
+        # Collect zip files to extract
+        zip_files = [f for f in os.listdir(args.zippath) if f.endswith('.zip') and not f.startswith('._')]
 
-                # Unzip everything in the zip file
-                with zipfile.ZipFile(os.path.join(args.zippath, zip_filename), 'r') as zip_archive:
-                    zip_archive.extractall(args.tmppath)
+        if zip_files:
+            if not args.quiet:
+                print(f'Extracting {len(zip_files)} zip files using {args.zip_workers} parallel processes')
+
+            # Create work items as tuples for the module-level extract_zip function
+            work_items = [(args.zippath, f, args.tmppath, args.quiet) for f in zip_files]
+
+            with ProcessPoolExecutor(max_workers=args.zip_workers) as executor:
+                list(executor.map(extract_zip, work_items))
 
     # Determine which tilesets to generate
     if args.all:
@@ -2228,8 +2273,9 @@ def main():
         maxlod_zoom = tileset_def['maxlod_zoom']
         resolution = calculate_resolution_for_zoom(maxlod_zoom, args.epsg)
 
-        # Create a list to hold the file paths of the reprojected datasets
+        # Collect work items for parallel processing and output paths
         reprojected_files = []
+        work_items = []
 
         # Process each source dataset required by the tileset
         dataset_names = tileset_def['datasets']
@@ -2251,14 +2297,54 @@ def main():
                 input_file = dataset_def.get('input_file', f'{dataset_name}.tif')
                 input_full_path = os.path.join(args.tmppath, input_file)
 
-                if not args.quiet:
-                    print(f'Reprojecting {dataset_name}')
-
-                # Reproject the dataset and return the path to the reprojected dataset
-                process(input_full_path, output_full_path, dataset_def, resolution, args.reproject_resampling, args.epsg)
+                # Collect work item for parallel processing
+                work_items.append({
+                    'dataset_name': dataset_name,
+                    'input_full_path': input_full_path,
+                    'output_full_path': output_full_path,
+                    'dataset_def': dataset_def,
+                })
 
             # Add the reprojected dataset to the list
             reprojected_files.append(output_full_path)
+
+        # Process datasets in parallel
+        if work_items:
+            # Pre-expand all unique input files to RGB in parallel
+            unique_inputs = list(set(item['input_full_path'] for item in work_items))
+            if not args.quiet:
+                print(f'Expanding {len(unique_inputs)} input files to RGB using {args.expand_workers} parallel processes')
+            expand_work_items = [(f, args.quiet) for f in unique_inputs]
+            with ProcessPoolExecutor(max_workers=args.expand_workers) as executor:
+                list(executor.map(expand_to_rgb, expand_work_items))
+
+            # Reproject all datasets in parallel
+            # Calculate threads per process to maximize CPU usage
+            concurrent_processes = min(args.reproject_workers, len(work_items))
+            num_threads = max(1, cpu_count // concurrent_processes)
+
+            if not args.quiet:
+                print(f'Reprojecting {len(work_items)} datasets using {concurrent_processes} parallel processes ({num_threads} threads each)')
+            with ProcessPoolExecutor(max_workers=args.reproject_workers) as executor:
+                futures = []
+                for item in work_items:
+                    future = executor.submit(
+                        process,
+                        item['input_full_path'],
+                        item['output_full_path'],
+                        item['dataset_def'],
+                        resolution,
+                        args.reproject_resampling,
+                        args.epsg,
+                        num_threads=num_threads,
+                        dataset_name=item['dataset_name'],
+                        quiet=args.quiet,
+                    )
+                    futures.append(future)
+
+                # Wait for all futures to complete
+                for future in futures:
+                    future.result()  # Raises any exception that occurred
 
         if not args.quiet:
             print(f'Building VRT for {tileset_name}')
@@ -2294,7 +2380,7 @@ def main():
 
             # For now, call gdal2tiles until rasterio supports tile creation
             import osgeo_utils.gdal2tiles
-            osgeo_utils.gdal2tiles.main([quiet, '-x', '-z', zoom, '-w', 'leaflet', '-p', profile, '-r', resampling, f'--processes={os.cpu_count()}', '--tiledriver=WEBP', vrt_path, tile_path])
+            osgeo_utils.gdal2tiles.main([quiet, '-x', '-z', zoom, '-w', 'leaflet', '-p', profile, '-r', resampling, f'--processes={args.tile_workers}', '--tiledriver=WEBP', vrt_path, tile_path])
 
     # Remove the temporary directory and its contents if remove is True
     if args.cleanup:
