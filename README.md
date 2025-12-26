@@ -1,6 +1,6 @@
 # aeronav2tiles
 
-A Python tool that downloads FAA Aeronav raster charts and converts them into web map tile pyramids (XYZ format) suitable for use with tile servers and mapping applications.
+Python tools for downloading FAA Aeronav raster charts and converting them into web map tile pyramids (XYZ format) suitable for use with tile servers and mapping applications.
 
 ## Features
 
@@ -12,7 +12,6 @@ A Python tool that downloads FAA Aeronav raster charts and converts them into we
 ## Requirements
 
 - Python 3.13+
-- GDAL system library
 
 ## Installation
 
@@ -37,10 +36,9 @@ A Python tool that downloads FAA Aeronav raster charts and converts them into we
 
 | Package | Description |
 |---------|-------------|
-| `beautifulsoup4` | Parses HTML to scrape chart download URLs from the FAA website |
+| `beautifulsoup4` | Parses HTML to scrape chart download URLs (used by aeronav_download.py) |
 | `numpy` | Array operations for raster data manipulation |
-| `rasterio` | Geospatial raster I/O, reprojection, and processing |
-| `gdal` (<=3.10.2) | Provides `gdal2tiles` for generating the final tile pyramids |
+| `rasterio` | Geospatial raster I/O, reprojection, and tile generation |
 
 ## Concepts
 
@@ -73,31 +71,48 @@ Each dataset may define:
 
 ## Processing Pipeline
 
-The tool implements a 6-stage processing pipeline. See the `main()` function docstring in `aeronav2tiles.py` for a comprehensive description.
+The tools implement a two-stage workflow:
 
-1. **Download**: Scrapes aeronav.faa.gov for current chart URLs and downloads ZIP files
-2. **Unzip**: Extracts GeoTIFF files to a temporary directory
-3. **Select Tilesets**: Determines which tilesets to generate based on command-line arguments
-4. **Process Datasets**: For each dataset in the selected tilesets:
+### Stage 1: Download (`aeronav_download.py`)
+
+Scrapes aeronav.faa.gov for current chart URLs and downloads ZIP files.
+
+### Stage 2: Process (`aeronav2tiles.py`)
+
+See the `main()` function docstring for a comprehensive description.
+
+1. **Unzip**: Extracts GeoTIFF files to a temporary directory
+2. **Select Tilesets**: Determines which tilesets to generate based on command-line arguments
+3. **Process Datasets**: For each dataset in the selected tilesets:
    - **Expand to RGB**: Converts paletted images to RGB (one-time preprocessing, modifies source files in-place)
    - **Clip**: Applies pixel-coordinate masks to remove legends, insets, and non-map content
    - **Georeference**: Applies GCPs for datasets without built-in georeferencing (e.g., chart insets)
    - **Reproject**: Transforms to Web Mercator (EPSG:3857) at the tileset's target resolution
-5. **Merge**: Combines datasets into VRT (virtual raster) files per tileset
-6. **Generate Tiles**: Creates XYZ tile pyramids using GDAL's gdal2tiles
+4. **Merge**: Combines datasets into VRT (virtual raster) files per tileset
+5. **Generate Tiles**: Creates XYZ tile pyramids
 
 ## Usage
 
-### Basic Usage
+### Download Charts
 
 ```bash
-python aeronav2tiles.py --zippath /path/to/zips --tmppath /path/to/tmp --outpath /path/to/output
+python aeronav_download.py /path/to/zips
 ```
 
-### Download and Generate All Tiles
+### Process Charts into Tiles
 
 ```bash
-python aeronav2tiles.py --download --all --zippath ./zips --tmppath /tmp/aeronav2tiles --outpath ./tiles --cleanup
+python aeronav2tiles.py --zippath /path/to/zips --tmppath /path/to/tmp --outpath /path/to/output --all
+```
+
+### Complete Workflow
+
+```bash
+# Download current charts
+python aeronav_download.py ./zips
+
+# Process all tilesets
+python aeronav2tiles.py --all --zippath ./zips --tmppath /tmp/aeronav2tiles --outpath ./tiles --cleanup
 ```
 
 ### Generate Specific Tilesets
@@ -112,13 +127,21 @@ python aeronav2tiles.py --tilesets "VFR Sectional Charts" "IFR Enroute Low Altit
 
 ### Command-Line Options
 
+**aeronav_download.py**:
+
 | Option | Description |
 |--------|-------------|
-| `--download` | Download current chart data from aeronav.faa.gov |
+| `zippath` | Directory for downloaded ZIP files (positional or --zippath) |
+| `--quiet` | Suppress output messages |
+
+**aeronav2tiles.py**:
+
+| Option | Description |
+|--------|-------------|
 | `--all` | Generate all available tilesets |
 | `--tilesets <names>` | Generate specific tilesets (space-separated) |
 | `--list-tilesets` | List available tilesets and exit |
-| `--zippath <path>` | Directory for downloaded ZIP files |
+| `--zippath <path>` | Directory containing downloaded ZIP files |
 | `--tmppath <path>` | Directory for temporary processing files (default: /tmp/aeronav2tiles) |
 | `--outpath <path>` | Directory for output tiles |
 | `--epsg <code>` | Destination EPSG code (default: 3857 for Web Mercator) |

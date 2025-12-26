@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 '''
-This script downloads Aeronav raster images from the FAA, unzips them, and
-processes them into a format suitable for use with a web map tile server.
+This script processes FAA Aeronav raster chart images and converts them into
+web map tile pyramids suitable for tile servers.
+
+Use aeronav_download.py to download the chart ZIP files first.
 
 Command Line Arguments:
-    --zippath: Specify the directory to store downloaded Aeronav data.
+    --zippath: Specify the directory containing downloaded Aeronav ZIP files.
     --tmppath: Specify the directory to store temporary files (default: /tmp/aeronav2tiles).
     --outpath: Specify the directory to store the output tilesets.
-    --download: Download the current data into zippath from aeronav.faa.gov before processing.
     --all: Generate all tilesets.
     --tilesets: Specify the tilesets to generate.
     --existing: [DEVELOPMENT] Use existing reprojected datasets.
@@ -17,7 +18,8 @@ Command Line Arguments:
     --cleanup: Remove the temporary directory and its contents after processing.
 
 Usage:
-    python aeronav2tiles.py --current --zippath /path/to/zips --tmppath /path/to/tmp --outpath /path/to/output --resampling bilinear --cleanup
+    python aeronav_download.py /path/to/zips
+    python aeronav2tiles.py --all --zippath /path/to/zips --tmppath /path/to/tmp --outpath /path/to/output --cleanup
 
 Raises:
     ValueError: If no projection information is found in the dataset.
@@ -26,16 +28,11 @@ Raises:
 import argparse
 import math
 import os
-import re
 import shutil
-import time
-import urllib.error
-import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
 from concurrent.futures import ProcessPoolExecutor
 
-import bs4
 import numpy
 import rasterio.control
 import rasterio.crs
@@ -1458,130 +1455,6 @@ tileset_datasets = {
     },
 }
 
-# Download support
-
-_AERONAV_VFR_URL = 'https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/vfr/'
-_AERONAV_IFR_URL = 'https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/ifr/'
-
-def download(url, path='.', filename=None):
-    '''
-    Downloads a file from the given URL and saves it to the specified path and filename.
-    If the filename is not provided, the file will be saved with the basename of the URL.
-    If the file already exists, the function will add an 'If-Modified-Since' header to the request
-    to avoid downloading the file again if it has not been modified.
-
-    Args:
-        url (str): The URL of the file to download.
-        path (str, optional): The directory path to save the file. Defaults to '.'.
-        filename (str, optional): The name of the file to save. Defaults to None (uses basename of URL).
-
-    Returns:
-        str: The full path of the downloaded file.
-
-    Raises:
-        urllib.error.HTTPError: If an HTTP error occurs other than a 304 Not Modified response.
-    '''
-    # Create a request to retrieve the file
-    request = urllib.request.Request(url)
-
-    # Set filename
-    filename = os.path.join(path, filename or os.path.basename(url))
-
-    # Check if the file already exists on the filesystem and add the If-Modified-Since header to the request
-    if os.path.exists(filename):
-        last_modified_time = os.path.getmtime(filename)
-        last_modified_time_str = time.strftime('%a, %d %b %Y %H:%M:%S GMT', time.gmtime(last_modified_time))
-        request.add_header('If-Modified-Since', last_modified_time_str)
-
-    # Download the file
-    try:
-        with urllib.request.urlopen(request) as response:
-            if response.status == 200:
-                with open(filename, 'wb') as f:
-                    f.write(response.read())
-
-    except urllib.error.HTTPError as e:
-        # Check if the server returned a 304 Not Modified response, if so, just skip the download
-        if e.code != 304:
-            raise
-
-    return filename
-
-def get_current_aeronav_urls(index_url, chart_types):
-    '''
-    Scrapes the aeronav.faa.gov website for the current URLs of the specified chart types.
-    '''
-
-    # Read the page for scraping
-    with urllib.request.urlopen(index_url) as response:
-        html = response.read().decode('utf-8')
-
-    soup = bs4.BeautifulSoup(html, 'html.parser')
-
-    urls = []
-    for chart_type in chart_types:
-        # Each chart type has its own div
-        chart = soup.find('div', id=chart_type)
-        if chart:
-            # Any table describes a set of charts
-            tables = chart.find_all('table')
-            for table in tables:
-                # Each row in the table describes a chart
-                rows = table.find_all('tr')
-                for row in rows:
-                    # The second cell in each row contains the current chart info
-                    cells = row.find_all('td')
-                    if len(cells) >= 2:
-                        # Find all <a> elements in the cell
-                        a_tags = cells[1].find_all('a')
-                        for a_tag in a_tags:
-                            # Check if the link text is 'Geo-TIFF'
-                            if a_tag and a_tag.get_text(strip=True).lower() == 'geo-tiff':
-                                # Finally, there it is
-                                geo_tiff_url = a_tag['href']
-                                urls.append(geo_tiff_url)
-    return urls
-
-def fix_faa_incorrect_urls(urls):
-    '''
-    Fixes incorrect URLs on the aeronav.faa.gov website by finding the most common "before date" part of the URL
-    and using that as the base URL for all URLs. This is necessary because the FAA's web site doesn't always
-    link to the correct file. FAA, get your shit together.
-    '''
-    url_tuples = []
-    date_pattern = re.compile(r'/(\d{2}-\d{2}-\d{4})/')
-
-    # Examine each URL, and find the date in the URL
-    for url in urls:
-        match = date_pattern.search(url)
-        if match:
-            # Store everything up to and including the date, then everything after the date
-            before_date = url[:match.end(1)]
-            after_date = url[match.end(1):]
-            url_tuples.append((before_date, after_date))
-        else:
-            raise ValueError(f"Could not find date in aeronav URL {url}")
-
-    # All "before date" parts should be the same. Tally up the counts of each "before date" part
-    baseurl_counts = {}
-    for before_date, _ in url_tuples:
-        if before_date not in baseurl_counts:
-            baseurl_counts[before_date] = 0
-        baseurl_counts[before_date] += 1
-
-    # If they are not all the same, use the most common one
-    if len(baseurl_counts) > 1:
-        most_common_baseurl = max(baseurl_counts, key=lambda x: baseurl_counts[x])
-        cleaned_urls = []
-        for before_date, after_date in url_tuples:
-            if before_date != most_common_baseurl:
-                cleaned_urls.append(most_common_baseurl + after_date)
-            else:
-                cleaned_urls.append(before_date + after_date)
-        return cleaned_urls
-    else:
-        return urls
-
 # ZIP extraction
 
 def extract_zip(args_tuple):
@@ -2064,23 +1937,15 @@ def process(input_full_path, output_full_path, dataset_def, resolution, resampli
 
 def main():
     '''
-    Main function to download Aeronav data from www.faa.gov and create web map tiles. How this works:
+    Main function to process Aeronav data and create web map tiles. How this works:
 
-    1. Download the Aeronav data from www.faa.gov
-
-        Arguments used: --zippath, --download
-
-        First things first, get the raw data from the FAA. There are separate URLs for VFR and IFR data, and each URL
-        points to a web page with links to the actual data files. We scrape these URLs for the correct ZIP files,
-        and download them to a permanent source directory.
-
-    2. Unzip the downloaded files
+    1. Unzip the downloaded files
 
         Arguments used: --zippath, --tmppath
 
         The ZIP files contain a bunch of GeoTIFF files, which we extract to a temporary directory.
 
-    3. Choose which tilesets to generate
+    2. Choose which tilesets to generate
 
         Arguments used: --all, --tilesets
 
@@ -2120,9 +1985,9 @@ def main():
         within the same tileset requires no resampling, and that building the tiles for the highest level of detail
         requires no resampling, either.
 
-    4. Process each dataset within the chosen tilesets
+    3. Process each dataset within the chosen tilesets
 
-        Steps 4a through 4d are applied to each dataset in the chosen tilesets. A "dataset" represents a single
+        Steps 3a through 3d are applied to each dataset in the chosen tilesets. A "dataset" represents a single
         chunk of data to include in the map for each tileset. Most datasets correspond 1:1 with the input GeoTIFF
         files, but some datasets represent subsets of a GeoTIFF file. For example, the "IFR High Altitude U.S."
         tileset includes the following datasets:
@@ -2142,7 +2007,7 @@ def main():
 
         Each of those datasets correspond to a single GeoTIFF file from the FAA.
 
-    4a. Expand all input files to RGB if they contain a colormap band
+    3a. Expand all input files to RGB if they contain a colormap band
 
         Some files, as downloaded from the FAA, contain a single band with a colormap palette. We need to expand
         these to three bands (RGB) so that they can be reprojected and tiled properly. If we didn't do this, or
@@ -2150,31 +2015,31 @@ def main():
         is done in-place with the original files overwritten. Therefore, subsequent runs of this program do not
         need to repeat this (io-expensive) step.
 
-    4b. Clip invalid data from the datasets
+    3b. Clip invalid data from the datasets
 
         Each dataset is a rasterized paper chart, and as such, contains descriptive material, ledgends, insets, and
         other non-map data. We use hard-coded polygons to clip this data out of the datasets. Clipping reduces the
         size of the final map tiles and allows all datasets in a tileset to seamlessly blend together. Clipping is
         done both in pixel coordinates and (in some cases) in Lat/Lon coordinates.
 
-    4c. Re-georeference some of the datasets
+    3c. Re-georeference some of the datasets
 
         The GeoTIFF files from the FAA are georeferenced, but we also take data from insets within those files, and
         these insets are not georeferenced. We use hard coded Ground Control Points (GCPs) to georeference these.
 
-    4d. Reproject the datasets to the destination CRS
+    3d. Reproject the datasets to the destination CRS
 
         Arguments used: --reproject-resampling, --epsg
 
         The FAA data is in a variety of projections, so we reproject everything to the destination
         coordinate system specified by --epsg (default: 3857 for Web Mercator)
 
-    5. Combine each tileset's datasets into a single file
+    4. Combine each tileset's datasets into a single file
 
         We use a single .vrt file for each tileset, since from now on we treat all datasets in a tileset as a single
         entity. The .vrt file is a virtual raster file that points to all the individual datasets in the tileset.
 
-    6. Generate map tiles for each tileset
+    5. Generate map tiles for each tileset
 
         Arguments used: --outpath, --tile-resampling
 
@@ -2184,13 +2049,12 @@ def main():
     '''
 
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Download Aeronav data from aeronav.faa.gov and create web map tiles.')
+    parser = argparse.ArgumentParser(description='Process Aeronav data and create web map tiles.')
     # Where to put the data
-    parser.add_argument('--zippath', help='Specify the directory to store downloaded Aeronav data.')
+    parser.add_argument('--zippath', help='Specify the directory containing downloaded Aeronav ZIP files.')
     parser.add_argument('--tmppath', default='/tmp/aeronav2tiles', help='Specify the directory to store temporary files. Default is /tmp/aeronav2tiles.')
     parser.add_argument('--outpath', help='Specify the directory to store the output tilesets.')
     # What to do
-    parser.add_argument('--download', action='store_true', help='Download the Aeronav data from aeronav.faa.gov. If not specified, all zip files must already exist in zippath.')
     parser.add_argument('--all', action='store_true', help='Generate all tilesets, ignoring the --tilesets argument.')
     parser.add_argument('--tilesets', nargs='*', help='Specify the tilesets to generate.')
     parser.add_argument('--list-tilesets', action='store_true', help='List the available tilesets.')
@@ -2217,28 +2081,6 @@ def main():
         for tileset in tileset_datasets.keys():
             print(f'{tileset}')
         return
-
-    # Download the Aeronav data if the download flag is set
-    if args.download and args.zippath:
-        if not args.quiet:
-            print('Scraping aeronav.faa.gov...')
-
-        # Scrape all chart file URLs
-        vfr_urls = get_current_aeronav_urls(_AERONAV_VFR_URL, ['sectional', 'terminalArea', 'helicopter', 'grandCanyon', 'Planning', 'caribbean'])
-        ifr_urls = get_current_aeronav_urls(_AERONAV_IFR_URL, ['lowsHighsAreas', 'planning', 'caribbean', 'gulf'])
-
-        # aeronav.faa.gov may have some incorrect URLs, so we need to clean them up
-        vfr_urls = fix_faa_incorrect_urls(vfr_urls)
-        ifr_urls = fix_faa_incorrect_urls(ifr_urls)
-
-        # Create the  directory if it does not exist
-        os.makedirs(args.zippath, exist_ok=True)
-
-        # Download all the files
-        for url in vfr_urls + ifr_urls:
-            if not args.quiet:
-                print(f'Downloading {url}...')
-            download(url, os.path.join(args.zippath))
 
     # Unzip the downloaded files
     if args.zippath:
