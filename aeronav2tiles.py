@@ -2179,7 +2179,7 @@ def main():
         Arguments used: --outpath, --tile-resampling
 
         Finally, we generate map tiles for each tileset, for each zoom level, and save each tileset's tiles to a
-        separate directory. We currently just call in to the GDAL2Tiles.py script for this, which is part of GDAL.
+        separate directory using rasterio_tiles.generate_tiles().
 
     '''
 
@@ -2391,22 +2391,21 @@ def main():
             if not args.quiet:
                 print(f'Building tiles for {tileset_name}')
 
-            # Build the tile pyramid from the VRT file
-            resampling = 'near' if args.tile_resampling == 'nearest' else args.tile_resampling
-            quiet = '-q' if args.quiet else ''
+            # Parse zoom range (e.g., "10-12" -> min_zoom=10, max_zoom=12)
+            min_zoom, max_zoom = map(int, zoom.split('-'))
 
-            # Determine the profile based on EPSG code
-            # For Mercator-based projections (3857, 3395), use 'mercator' profile
-            # gdal2tiles defaults to 'mercator' for EPSG:3857, but we need to be explicit
-            if args.epsg in [3857, 3395]:
-                profile = 'mercator'
-            else:
-                # For other EPSG codes, use 'raster' profile (no specific tile scheme)
-                profile = 'raster'
-
-            # For now, call gdal2tiles until rasterio supports tile creation
-            import osgeo_utils.gdal2tiles
-            osgeo_utils.gdal2tiles.main([quiet, '-x', '-z', zoom, '-w', 'leaflet', '-p', profile, '-r', resampling, f'--processes={args.tile_workers}', '--tiledriver=WEBP', vrt_path, tile_path])
+            # Generate tiles using rasterio-based tile generator
+            from rasterio_tiles import generate_tiles
+            generate_tiles(
+                input_path=vrt_path,
+                output_path=tile_path,
+                min_zoom=min_zoom,
+                max_zoom=max_zoom,
+                resampling=args.tile_resampling,
+                tile_format='WEBP',
+                num_processes=args.tile_workers,
+                quiet=args.quiet,
+            )
 
     # Remove the temporary directory and its contents if remove is True
     if args.cleanup:
