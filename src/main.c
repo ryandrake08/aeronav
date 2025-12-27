@@ -350,66 +350,24 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    /* Build VRTs and generate tiles for each tileset */
-    info("\nBuilding VRTs and generating tiles...");
-
     /* Initialize GDAL in main process for VRT building and tile generation */
     GDALAllRegister();
 
-    for (int t = 0; t < valid_tileset_count; t++) {
-        const Tileset *tileset = tilesets[t];
+    /* Build VRTs for all tilesets */
+    build_tilesets_vrt(tilesets, valid_tileset_count, opts.tmppath);
 
-        info("\n=== VRT/Tiles: %s ===", tileset->name);
+    /* Generate tiles for each tileset */
+    if (opts.outpath) {
+        info("\nGenerating tiles...");
 
-        /* Collect temp file paths for this tileset */
-        char (*temp_file_buf)[PATH_SIZE] = malloc(tileset->dataset_count * PATH_SIZE);
-        const char **temp_files = malloc(tileset->dataset_count * sizeof(char *));
+        for (int t = 0; t < valid_tileset_count; t++) {
+            const Tileset *tileset = tilesets[t];
 
-        if (!temp_file_buf || !temp_files) {
-            error("Failed to allocate temp file arrays");
-            free(temp_file_buf);
-            free(temp_files);
-            continue;
-        }
+            char vrt_path[PATH_SIZE];
+            snprintf(vrt_path, sizeof(vrt_path), "%s/__%s.vrt", opts.tmppath, tileset->name);
 
-        bool all_created = true;
-        for (int d = 0; d < tileset->dataset_count; d++) {
-            const Dataset *dataset = get_dataset(tileset->datasets[d]);
-            if (!dataset) {
-                all_created = false;
-                continue;
-            }
-            snprintf(temp_file_buf[d], PATH_SIZE, "%s/%s", opts.tmppath, dataset->tmp_file);
-            temp_files[d] = temp_file_buf[d];
+            info("\n=== Tiles: %s ===", tileset->name);
 
-            /* Verify file exists */
-            struct stat st;
-            if (stat(temp_files[d], &st) != 0) {
-                error("Missing output file: %s", temp_files[d]);
-                all_created = false;
-            }
-        }
-
-        if (!all_created) {
-            error("Skipping tileset due to missing files: %s", tileset->name);
-            free(temp_file_buf);
-            free(temp_files);
-            continue;
-        }
-
-        /* Build VRT from temp files */
-        char vrt_path[PATH_SIZE];
-        snprintf(vrt_path, sizeof(vrt_path), "%s/%s.vrt", opts.tmppath, tileset->tile_path);
-
-        if (build_vrt(vrt_path, temp_files, tileset->dataset_count) != 0) {
-            error("Failed to build VRT for tileset: %s", tileset->name);
-            free(temp_file_buf);
-            free(temp_files);
-            continue;
-        }
-
-        /* Generate tiles (if outpath specified) */
-        if (opts.outpath) {
             int result = generate_tiles(
                 vrt_path,
                 opts.outpath,
@@ -426,9 +384,6 @@ int main(int argc, char *argv[]) {
                 error("Failed to generate tiles for tileset: %s", tileset->name);
             }
         }
-
-        free(temp_file_buf);
-        free(temp_files);
     }
 
     free(tilesets);

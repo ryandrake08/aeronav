@@ -150,14 +150,22 @@ int process_datasets_parallel(
 );
 
 /* ============================================================================
- * VRT Building (processing.c)
+ * VRT Building (vrt.c)
  * ============================================================================ */
 
 /*
- * Build a VRT from multiple input files and save to outpath.
+ * Build VRT files for all tilesets.
+ *
+ * For each tileset, collects the processed dataset files from tmppath,
+ * verifies they exist, and builds a VRT at {tmppath}/__{tileset_name}.vrt
+ *
  * Returns 0 on success, -1 on error.
  */
-int build_vrt(const char *outpath, const char **input_files, int file_count);
+int build_tilesets_vrt(
+    const Tileset **tilesets,
+    int tileset_count,
+    const char *tmppath
+);
 
 /* ============================================================================
  * Tile Generation (tiling.c)

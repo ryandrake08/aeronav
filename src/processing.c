@@ -789,48 +789,6 @@ static int process_dataset(const char *zippath,
 }
 
 /* ============================================================================
- * VRT Building
- * ============================================================================ */
-
-int build_vrt(const char *outpath, const char **input_files, int file_count) {
-    if (!input_files || file_count == 0) {
-        error("build_vrt: no input files");
-        return -1;
-    }
-
-    info("  Building VRT from %d dataset(s)...", file_count);
-
-    GDALBuildVRTOptions *vrt_options = GDALBuildVRTOptionsNew(NULL, NULL);
-    if (!vrt_options) {
-        error("Failed to create VRT options");
-        return -1;
-    }
-
-    int error_flag = 0;
-    GDALDatasetH vrt = GDALBuildVRT(
-        outpath,
-        file_count,
-        NULL,
-        input_files,
-        vrt_options,
-        &error_flag
-    );
-
-    GDALBuildVRTOptionsFree(vrt_options);
-
-    if (!vrt || error_flag) {
-        error("Failed to build VRT");
-        return -1;
-    }
-
-    info("    VRT: %dx%d, %d bands",
-         GDALGetRasterXSize(vrt), GDALGetRasterYSize(vrt), GDALGetRasterCount(vrt));
-
-    GDALClose(vrt);
-    return 0;
-}
-
-/* ============================================================================
  * Parallel Dataset Processing
  * ============================================================================ */
 
