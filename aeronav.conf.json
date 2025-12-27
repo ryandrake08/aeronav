@@ -683,19 +683,19 @@
       "zip_file": "Anchorage-Fairbanks_TAC",
       "mask": [[[3103, 59], [3103, 5763], [11175, 5763], [11175, 59], [3103, 59]]]
     },
-    "GOM_CN": {
+    "GOA_CN": {
       "zip_file": "goa_central_tif",
       "mask": [[[1754, 75], [1754, 12526], [15676, 12526], [15676, 75], [1754, 75]]]
     },
-    "GOM_CS": {
+    "GOA_CS": {
       "zip_file": "goa_central_tif",
       "mask": [[[74, 74], [74, 8174], [15675, 8174], [15675, 74], [74, 74]]]
     },
-    "GOM_WN": {
+    "GOA_WN": {
       "zip_file": "goa_west_tif",
       "mask": [[[74, 5986], [74, 12526], [15676, 12526], [15676, 74], [74, 74], [3504, 74], [3504, 5986], [74, 5986]]]
     },
-    "GOM_WS": {
+    "GOA_WS": {
       "zip_file": "goa_west_tif",
       "mask": [[[74, 74], [74, 8210], [15677, 8210], [15677, 74], [74, 74]]]
     },
@@ -1203,7 +1203,7 @@
     },
     "VFR Sectional Charts": {
       "tile_path": "vfr_sectional",
-      "zoom": [10, 12],
+      "zoom": [0, 12],
       "maxlod_zoom": 12,
       "datasets": [
         "U.S. Gulf Coast HEL",
@@ -1381,7 +1381,7 @@
       ]
     },
     "Helicopter Route Detail Charts": {
-      "tile_path": "vfr_helicopter_inset",
+      "tile_path": "vfr_helicopter",
       "zoom": [15, 15],
       "maxlod_zoom": 15,
       "datasets": [
@@ -1399,7 +1399,7 @@
       "datasets": ["US_IFR_PLAN_EAST", "US_IFR_PLAN_WEST"]
     },
     "IFR Enroute High And Low Altitude Pacific": {
-      "tile_path": "ifr_pacific",
+      "tile_path": "ifr_high_pac",
       "zoom": [0, 8],
       "maxlod_zoom": 8,
       "datasets": ["ENR_P01"]
@@ -1411,7 +1411,7 @@
       "datasets": ["ENR_AKH01", "ENR_AKH02"]
     },
     "IFR Enroute High Altitude Alaska Detail": {
-      "tile_path": "ifr_high_ak_detail",
+      "tile_path": "ifr_high_ak",
       "zoom": [10, 10],
       "maxlod_zoom": 10,
       "datasets": ["ENR_AKH01_SEA"]
@@ -1469,7 +1469,7 @@
     },
     "IFR Enroute Low Altitude Pacific": {
       "tile_path": "ifr_low_pac",
-      "zoom": [9, 11],
+      "zoom": [0, 11],
       "maxlod_zoom": 11,
       "datasets": ["ENR_P02"]
     },
@@ -1588,7 +1588,7 @@
       "datasets": ["PORC_COMP"]
     },
     "North Pacific Route Planning Detail Chart": {
-      "tile_path": "porc_detail",
+      "tile_path": "porc",
       "zoom": [8, 8],
       "maxlod_zoom": 8,
       "datasets": ["PORC_NE", "PORC_NW", "PORC_SE", "PORC_SW"]
@@ -1599,11 +1599,11 @@
       "maxlod_zoom": 9,
       "datasets": ["WATRS"]
     },
-    "IFR Gulf Of Mexico Chart": {
-      "tile_path": "gom",
+    "IFR Gulf Of America Chart": {
+      "tile_path": "goa",
       "zoom": [0, 12],
       "maxlod_zoom": 12,
-      "datasets": ["GOM_CN", "GOM_CS", "GOM_WN", "GOM_WS"]
+      "datasets": ["GOA_CN", "GOA_CS", "GOA_WN", "GOA_WS"]
     }
   }
 }
