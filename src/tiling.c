@@ -11,9 +11,11 @@
 #include <math.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #include <signal.h>
 #include <errno.h>
+#include <stdatomic.h>
 #include <gdal.h>
 
 #include "aeronav.h"
@@ -433,16 +435,21 @@ int generate_tileset_tiles_parallel(
             actual_workers = total_tiles;
         }
 
+        /* Create shared atomic counter for dynamic work distribution */
+        atomic_int *next_tile = mmap(NULL, sizeof(atomic_int),
+                                     PROT_READ | PROT_WRITE,
+                                     MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+        if (next_tile == MAP_FAILED) {
+            error("Failed to create shared memory for tile counter");
+            free(tiles);
+            return -1;
+        }
+        atomic_store(next_tile, 0);
+
         /* Fork worker processes */
         pid_t pids[MAX_JOBS];
-        int tiles_per_worker = (total_tiles + actual_workers - 1) / actual_workers;
 
         for (int w = 0; w < actual_workers; w++) {
-            int start = w * tiles_per_worker;
-            int end = start + tiles_per_worker;
-            if (end > total_tiles) end = total_tiles;
-            if (start >= total_tiles) break;
-
             pid_t pid = fork();
             if (pid < 0) {
                 error("Failed to fork worker %d", w);
@@ -450,6 +457,7 @@ int generate_tileset_tiles_parallel(
                 for (int i = 0; i < w; i++) {
                     kill(pids[i], SIGTERM);
                 }
+                munmap(next_tile, sizeof(atomic_int));
                 free(tiles);
                 return -1;
             }
@@ -466,7 +474,11 @@ int generate_tileset_tiles_parallel(
                 int skipped = 0;
                 int resumed = 0;
 
-                for (int i = start; i < end; i++) {
+                /* Dynamic work distribution: grab tiles until none remain */
+                while (1) {
+                    int i = atomic_fetch_add(next_tile, 1);
+                    if (i >= total_tiles) break;
+
                     int result = generate_tile(worker_ds, tiles[i].z, tiles[i].x, tiles[i].y,
                                                outpath, tileset->tile_path, format,
                                                resample_alg, resume);
@@ -498,17 +510,17 @@ int generate_tileset_tiles_parallel(
 
         /* Wait for all workers */
         for (int w = 0; w < actual_workers; w++) {
-            if (pids[w] == 0) continue;  /* Worker not started */
-
             int status;
             waitpid(pids[w], &status, 0);
             if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
                 error("Worker %d failed", w);
+                munmap(next_tile, sizeof(atomic_int));
                 free(tiles);
                 return -1;
             }
         }
 
+        munmap(next_tile, sizeof(atomic_int));
         free(tiles);
         info("  Tile generation complete");
     }
