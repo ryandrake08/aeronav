@@ -381,124 +381,137 @@ static int get_tile_list(GDALDatasetH ds,
     return total_tiles;
 }
 
-int generate_tiles(const char *src_path,
-                   const char *outpath,
-                   const char *tile_path,
-                   int zoom_min,
-                   int zoom_max,
-                   const char *format,
-                   const char *resampling,
-                   int num_workers,
-                   bool resume) {
+int generate_tileset_tiles_parallel(
+    const Tileset **tilesets,
+    int tileset_count,
+    const char *tmppath,
+    const char *outpath,
+    const char *format,
+    const char *resampling,
+    int num_workers,
+    bool resume
+) {
+    info("\nGenerating tiles...");
+
     GDALRIOResampleAlg resample_alg = parse_resampling(resampling);
 
-    /* Open dataset to get tile list */
-    GDALDatasetH ds = GDALOpen(src_path, GA_ReadOnly);
-    if (!ds) {
-        error("Failed to open dataset: %s", src_path);
-        return -1;
-    }
+    for (int t = 0; t < tileset_count; t++) {
+        const Tileset *tileset = tilesets[t];
 
-    /* Get list of tiles to generate */
-    TileCoord *tiles = NULL;
-    int total_tiles = get_tile_list(ds, zoom_min, zoom_max, &tiles);
-    GDALClose(ds);
+        char vrt_path[PATH_SIZE];
+        snprintf(vrt_path, sizeof(vrt_path), "%s/__%s.vrt", tmppath, tileset->name);
 
-    if (total_tiles < 0 || !tiles) {
-        error("Failed to build tile list");
-        return -1;
-    }
+        info("\n=== Tiles: %s ===", tileset->name);
 
-    info("  Generating %d tiles with %d workers", total_tiles, num_workers);
-
-    if (total_tiles == 0) {
-        free(tiles);
-        return 0;
-    }
-
-    /* Limit workers to number of tiles */
-    if (num_workers > total_tiles) {
-        num_workers = total_tiles;
-    }
-
-    /* Fork worker processes */
-    pid_t pids[MAX_JOBS];
-    int tiles_per_worker = (total_tiles + num_workers - 1) / num_workers;
-
-    for (int w = 0; w < num_workers; w++) {
-        int start = w * tiles_per_worker;
-        int end = start + tiles_per_worker;
-        if (end > total_tiles) end = total_tiles;
-        if (start >= total_tiles) break;
-
-        pid_t pid = fork();
-        if (pid < 0) {
-            error("Failed to fork worker %d", w);
-            /* Kill already-started workers */
-            for (int i = 0; i < w; i++) {
-                kill(pids[i], SIGTERM);
-            }
-            free(tiles);
+        /* Open dataset to get tile list */
+        GDALDatasetH ds = GDALOpen(vrt_path, GA_ReadOnly);
+        if (!ds) {
+            error("Failed to open dataset: %s", vrt_path);
             return -1;
         }
 
-        if (pid == 0) {
-            /* Child process - open own dataset handle */
-            GDALDatasetH worker_ds = GDALOpen(src_path, GA_ReadOnly);
-            if (!worker_ds) {
-                error("Worker %d: Failed to open dataset", w);
-                _exit(1);
-            }
+        /* Get list of tiles to generate */
+        TileCoord *tiles = NULL;
+        int total_tiles = get_tile_list(ds, tileset->zoom_min, tileset->zoom_max, &tiles);
+        GDALClose(ds);
 
-            int generated = 0;
-            int skipped = 0;
-            int resumed = 0;
+        if (total_tiles < 0 || !tiles) {
+            error("Failed to build tile list for tileset: %s", tileset->name);
+            return -1;
+        }
 
-            for (int i = start; i < end; i++) {
-                int result = generate_tile(worker_ds, tiles[i].z, tiles[i].x, tiles[i].y,
-                                           outpath, tile_path, format, resample_alg, resume);
-                if (result == 0) {
-                    generated++;
-                } else if (result == 1) {
-                    skipped++;
-                } else if (result == 2) {
-                    resumed++;
-                }
-            }
+        info("  Generating %d tiles with %d workers", total_tiles, num_workers);
 
-            GDALClose(worker_ds);
-
-            if (resumed > 0) {
-                info("    Worker %d: %d generated, %d skipped, %d existing",
-                     w, generated, skipped, resumed);
-            } else {
-                info("    Worker %d: %d generated, %d skipped", w, generated, skipped);
-            }
-
+        if (total_tiles == 0) {
             free(tiles);
-            _exit(0);
+            continue;
         }
 
-        /* Parent - save child PID */
-        pids[w] = pid;
-    }
-
-    /* Wait for all workers */
-    int success = 1;
-    for (int w = 0; w < num_workers; w++) {
-        if (pids[w] == 0) continue;  /* Worker not started */
-
-        int status;
-        waitpid(pids[w], &status, 0);
-        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-            error("Worker %d failed", w);
-            success = 0;
+        /* Limit workers to number of tiles */
+        int actual_workers = num_workers;
+        if (actual_workers > total_tiles) {
+            actual_workers = total_tiles;
         }
+
+        /* Fork worker processes */
+        pid_t pids[MAX_JOBS];
+        int tiles_per_worker = (total_tiles + actual_workers - 1) / actual_workers;
+
+        for (int w = 0; w < actual_workers; w++) {
+            int start = w * tiles_per_worker;
+            int end = start + tiles_per_worker;
+            if (end > total_tiles) end = total_tiles;
+            if (start >= total_tiles) break;
+
+            pid_t pid = fork();
+            if (pid < 0) {
+                error("Failed to fork worker %d", w);
+                /* Kill already-started workers */
+                for (int i = 0; i < w; i++) {
+                    kill(pids[i], SIGTERM);
+                }
+                free(tiles);
+                return -1;
+            }
+
+            if (pid == 0) {
+                /* Child process - open own dataset handle */
+                GDALDatasetH worker_ds = GDALOpen(vrt_path, GA_ReadOnly);
+                if (!worker_ds) {
+                    error("Worker %d: Failed to open dataset", w);
+                    _exit(1);
+                }
+
+                int generated = 0;
+                int skipped = 0;
+                int resumed = 0;
+
+                for (int i = start; i < end; i++) {
+                    int result = generate_tile(worker_ds, tiles[i].z, tiles[i].x, tiles[i].y,
+                                               outpath, tileset->tile_path, format,
+                                               resample_alg, resume);
+                    if (result == 0) {
+                        generated++;
+                    } else if (result == 1) {
+                        skipped++;
+                    } else if (result == 2) {
+                        resumed++;
+                    }
+                }
+
+                GDALClose(worker_ds);
+
+                if (resumed > 0) {
+                    info("    Worker %d: %d generated, %d skipped, %d existing",
+                         w, generated, skipped, resumed);
+                } else {
+                    info("    Worker %d: %d generated, %d skipped", w, generated, skipped);
+                }
+
+                free(tiles);
+                _exit(0);
+            }
+
+            /* Parent - save child PID */
+            pids[w] = pid;
+        }
+
+        /* Wait for all workers */
+        for (int w = 0; w < actual_workers; w++) {
+            if (pids[w] == 0) continue;  /* Worker not started */
+
+            int status;
+            waitpid(pids[w], &status, 0);
+            if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+                error("Worker %d failed", w);
+                free(tiles);
+                return -1;
+            }
+        }
+
+        free(tiles);
+        info("  Tile generation complete");
     }
 
-    free(tiles);
-
-    info("  Tile generation complete");
-
-    return success ? 0 : -1;
+    return 0;
 }

@@ -16,7 +16,6 @@
 #include <signal.h>
 #include <math.h>
 #include <dirent.h>
-#include <gdal.h>
 
 #include "aeronav.h"
 
@@ -350,40 +349,23 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    /* Initialize GDAL in main process for VRT building and tile generation */
-    GDALAllRegister();
-
     /* Build VRTs for all tilesets */
-    build_tilesets_vrt(tilesets, valid_tileset_count, opts.tmppath);
+    if (opts.zippath || opts.outpath) {
+        build_tilesets_vrt(tilesets, valid_tileset_count, opts.tmppath);
+    }
 
-    /* Generate tiles for each tileset */
+    /* Generate tiles for all tilesets */
     if (opts.outpath) {
-        info("\nGenerating tiles...");
-
-        for (int t = 0; t < valid_tileset_count; t++) {
-            const Tileset *tileset = tilesets[t];
-
-            char vrt_path[PATH_SIZE];
-            snprintf(vrt_path, sizeof(vrt_path), "%s/__%s.vrt", opts.tmppath, tileset->name);
-
-            info("\n=== Tiles: %s ===", tileset->name);
-
-            int result = generate_tiles(
-                vrt_path,
-                opts.outpath,
-                tileset->tile_path,
-                tileset->zoom_min,
-                tileset->zoom_max,
-                opts.format,
-                opts.tile_resampling,
-                opts.tile_workers,
-                opts.resume
-            );
-
-            if (result != 0) {
-                error("Failed to generate tiles for tileset: %s", tileset->name);
-            }
-        }
+        generate_tileset_tiles_parallel(
+            tilesets,
+            valid_tileset_count,
+            opts.tmppath,
+            opts.outpath,
+            opts.format,
+            opts.tile_resampling,
+            opts.tile_workers,
+            opts.resume
+        );
     }
 
     free(tilesets);

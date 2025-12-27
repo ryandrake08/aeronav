@@ -177,17 +177,23 @@ int build_tilesets_vrt(
 double resolution_for_zoom(int zoom);
 
 /*
- * Generate tiles from a file path using parallel workers.
+ * Generate tiles for all tilesets using parallel workers.
+ *
+ * For each tileset, opens the VRT at {tmppath}/__{tileset_name}.vrt,
+ * determines tiles to generate, and generates them using worker processes.
+ *
+ * Returns 0 on success, -1 on error.
  */
-int generate_tiles(const char *src_path,
-                   const char *outpath,
-                   const char *tile_path,
-                   int zoom_min,
-                   int zoom_max,
-                   const char *format,
-                   const char *resampling,
-                   int num_workers,
-                   bool resume);
+int generate_tileset_tiles_parallel(
+    const Tileset **tilesets,
+    int tileset_count,
+    const char *tmppath,
+    const char *outpath,
+    const char *format,
+    const char *resampling,
+    int num_workers,
+    bool resume
+);
 
 /* ============================================================================
  * Utility Functions
