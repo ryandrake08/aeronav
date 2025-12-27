@@ -131,24 +131,23 @@ const char **get_all_tileset_names(int *count);
  * ============================================================================ */
 
 /*
- * Process a single dataset through the full pipeline:
- * 1. Open from ZIP via /vsizip/
- * 2. Expand palette to RGB if needed
- * 3. Apply pixel-space mask
- * 4. Apply GCPs if provided
- * 5. Warp to target EPSG at specified resolution
- * 6. Clip to geographic bounds if specified
- * 7. Save to output file
+ * Process all datasets from the given tilesets in parallel.
  *
- * Returns 0 on success, -1 on error.
+ * Collects all datasets across all tilesets, creates processing jobs,
+ * and executes them using a parallel worker pool.
+ *
+ * Returns 0 on success (all jobs completed), -1 on error.
  */
-int process_dataset(const char *zippath,
-                    const Dataset *dataset,
-                    double resolution,
-                    const char *outpath,
-                    int num_threads,
-                    int epsg,
-                    const char *resampling);
+int process_datasets_parallel(
+    const Tileset **tilesets,
+    int tileset_count,
+    const char *zippath,
+    const char *tmppath,
+    int num_workers,
+    int threads_per_job,
+    int epsg,
+    const char *resampling
+);
 
 /* ============================================================================
  * VRT Building (processing.c)

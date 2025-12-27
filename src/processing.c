@@ -16,6 +16,7 @@
 #include <math.h>
 
 #include "aeronav.h"
+#include "jobqueue.h"
 #include <gdal.h>
 #include <gdal_utils.h>
 #include <gdal_alg.h>
@@ -691,13 +692,13 @@ static int save_to_file(GDALDatasetH ds, const char *outpath) {
     return 0;
 }
 
-int process_dataset(const char *zippath,
-                    const Dataset *dataset,
-                    double resolution,
-                    const char *outpath,
-                    int num_threads,
-                    int epsg,
-                    const char *resampling) {
+static int process_dataset(const char *zippath,
+                           const Dataset *dataset,
+                           double resolution,
+                           const char *outpath,
+                           int num_threads,
+                           int epsg,
+                           const char *resampling) {
     info("  Opening %s from ZIP...", dataset->name);
 
     /* Build vsizip path: /vsizip/zippath/name.zip/input_file */
@@ -821,4 +822,153 @@ int build_vrt(const char *outpath, const char **input_files, int file_count) {
 
     GDALClose(vrt);
     return 0;
+}
+
+/* ============================================================================
+ * Parallel Dataset Processing
+ * ============================================================================ */
+
+/*
+ * Job data for processing a single dataset.
+ * An array of these is passed to the job queue.
+ */
+typedef struct {
+    const char *zippath;          /* Directory containing ZIP files */
+    const Dataset *dataset;       /* Dataset to process */
+    double resolution;            /* Target resolution (from tileset maxlod_zoom) */
+    char temp_file[PATH_SIZE];    /* Output temp file path */
+    int num_threads;              /* Threads per job for warping */
+    int epsg;                     /* Target EPSG code */
+    const char *resampling;       /* Resampling method */
+} DatasetJob;
+
+/*
+ * Worker context (returned by worker_init).
+ */
+typedef struct {
+    int worker_id;
+} WorkerContext;
+
+static void *dataset_worker_init(int worker_id, void *init_data) {
+    (void)init_data;  /* Unused */
+
+    /* Initialize GDAL in this worker process */
+    GDALAllRegister();
+
+    WorkerContext *ctx = malloc(sizeof(WorkerContext));
+    if (!ctx) {
+        error("Worker %d: failed to allocate context", worker_id);
+        return NULL;
+    }
+    ctx->worker_id = worker_id;
+
+    return ctx;
+}
+
+static void dataset_worker_cleanup(void *worker_ctx) {
+    if (worker_ctx) {
+        free(worker_ctx);
+    }
+    /* Note: GDAL cleanup is automatic on process exit */
+}
+
+static int dataset_job_func(int job_index, void *job_data, void *worker_ctx) {
+    DatasetJob *jobs = (DatasetJob *)job_data;
+    DatasetJob *job = &jobs[job_index];
+
+    (void)worker_ctx;  /* Currently unused */
+
+    return process_dataset(
+        job->zippath,
+        job->dataset,
+        job->resolution,
+        job->temp_file,
+        job->num_threads,
+        job->epsg,
+        job->resampling
+    );
+}
+
+int process_datasets_parallel(
+    const Tileset **tilesets,
+    int tileset_count,
+    const char *zippath,
+    const char *tmppath,
+    int num_workers,
+    int threads_per_job,
+    int epsg,
+    const char *resampling
+) {
+    /* Count total datasets */
+    int total_datasets = 0;
+    for (int t = 0; t < tileset_count; t++) {
+        total_datasets += tilesets[t]->dataset_count;
+    }
+
+    if (total_datasets == 0) {
+        return 0;
+    }
+
+    /* Allocate job array */
+    DatasetJob *jobs = calloc(total_datasets, sizeof(DatasetJob));
+    if (!jobs) {
+        error("Failed to allocate job array");
+        return -1;
+    }
+
+    /* Populate jobs from all tilesets */
+    int job_index = 0;
+    for (int t = 0; t < tileset_count; t++) {
+        const Tileset *tileset = tilesets[t];
+        double resolution = resolution_for_zoom(tileset->maxlod_zoom);
+
+        info("\n=== Tileset: %s ===", tileset->name);
+        info("  Output path: %s", tileset->tile_path);
+        info("  Zoom range: %d-%d (maxlod: %d)",
+             tileset->zoom_min, tileset->zoom_max, tileset->maxlod_zoom);
+        info("  Datasets: %d", tileset->dataset_count);
+        info("  Resolution: %.6f m/pixel", resolution);
+
+        for (int d = 0; d < tileset->dataset_count; d++) {
+            const Dataset *dataset = get_dataset(tileset->datasets[d]);
+            if (!dataset) {
+                error("Unknown dataset: %s", tileset->datasets[d]);
+                continue;
+            }
+
+            DatasetJob *job = &jobs[job_index++];
+            job->zippath = zippath;
+            job->dataset = dataset;
+            job->resolution = resolution;
+            job->num_threads = threads_per_job;
+            job->epsg = epsg;
+            job->resampling = resampling;
+            snprintf(job->temp_file, PATH_SIZE, "%s/%s", tmppath, dataset->tmp_file);
+        }
+    }
+
+    int actual_job_count = job_index;
+    info("\nProcessing %d datasets with %d parallel workers...",
+         actual_job_count, num_workers);
+
+    /* Configure and run the job queue */
+    JobQueueConfig config = {
+        .num_jobs = actual_job_count,
+        .max_workers = num_workers,
+        .job_data = jobs,
+        .job_func = dataset_job_func,
+        .worker_init = dataset_worker_init,
+        .worker_cleanup = dataset_worker_cleanup,
+        .init_data = NULL,
+    };
+
+    JobQueueResult jq_result;
+    int queue_result = jobqueue_run(&config, &jq_result);
+
+    info("\nDataset processing complete: %d succeeded, %d failed",
+         jq_result.completed, jq_result.failed);
+
+    free(jobs);
+
+    return queue_result;
 }
