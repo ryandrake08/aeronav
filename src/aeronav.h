@@ -98,13 +98,16 @@ typedef struct {
     const char *outpath;        /* Output directory for tiles */
     const char *tmppath;        /* Temporary directory */
     const char *format;         /* Tile format: png, jpeg, webp */
+    const char *reproject_resampling;  /* Resampling for reprojection */
+    const char *tile_resampling;       /* Resampling for tile generation */
     const char **tilesets;      /* Specific tilesets to process, or NULL for all */
     int tileset_count;
     int jobs;                   /* Concurrent dataset processes */
-    int threads;                /* Threads per warp */
     int tile_workers;           /* Tile generation workers */
+    int epsg;                   /* Target EPSG code (default 3857) */
     bool quiet;                 /* Suppress output */
     bool resume;                /* Skip existing tiles */
+    bool cleanup;               /* Remove tmppath after processing */
 } Options;
 
 /* ============================================================================
@@ -133,7 +136,7 @@ const char **get_all_tileset_names(int *count);
  * 2. Expand palette to RGB if needed
  * 3. Apply pixel-space mask
  * 4. Apply GCPs if provided
- * 5. Warp to EPSG:3857 at specified resolution
+ * 5. Warp to target EPSG at specified resolution
  * 6. Clip to geographic bounds if specified
  * 7. Save to output file
  *
@@ -143,7 +146,9 @@ int process_dataset(const char *zippath,
                     const Dataset *dataset,
                     double resolution,
                     const char *outpath,
-                    int num_threads);
+                    int num_threads,
+                    int epsg,
+                    const char *resampling);
 
 /* ============================================================================
  * VRT Building (processing.c)
@@ -173,6 +178,7 @@ int generate_tiles(const char *src_path,
                    int zoom_min,
                    int zoom_max,
                    const char *format,
+                   const char *resampling,
                    int num_workers,
                    bool resume);
 

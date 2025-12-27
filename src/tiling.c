@@ -22,6 +22,18 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+/* Convert resampling string to GDAL enum */
+static GDALRIOResampleAlg parse_resampling(const char *resampling) {
+    if (strcmp(resampling, "nearest") == 0) return GRIORA_NearestNeighbour;
+    if (strcmp(resampling, "bilinear") == 0) return GRIORA_Bilinear;
+    if (strcmp(resampling, "cubic") == 0) return GRIORA_Cubic;
+    if (strcmp(resampling, "cubicspline") == 0) return GRIORA_CubicSpline;
+    if (strcmp(resampling, "lanczos") == 0) return GRIORA_Lanczos;
+    if (strcmp(resampling, "average") == 0) return GRIORA_Average;
+    if (strcmp(resampling, "mode") == 0) return GRIORA_Mode;
+    return GRIORA_Bilinear;  /* Default */
+}
+
 /* ============================================================================
  * GlobalMercator Calculations
  * ============================================================================ */
@@ -68,6 +80,7 @@ static int generate_tile(GDALDatasetH ds,
                          const char *outpath,
                          const char *tile_path,
                          const char *format,
+                         GDALRIOResampleAlg resample_alg,
                          bool resume) {
     /* Build output path early for resume check */
     char dir_path[PATH_SIZE];
@@ -167,19 +180,22 @@ static int generate_tile(GDALDatasetH ds,
     }
 
     /* Read and resample each band.
-     * GDALRasterIO resamples from (read_x, read_y, read_w, read_h) in source
-     * to (tile_w, tile_h) in the output buffer.
+     * GDALRasterIOEx resamples from (read_x, read_y, read_w, read_h) in source
+     * to (tile_w, tile_h) in the output buffer using the specified resampling.
      */
     unsigned char band_buf[TILE_SIZE * TILE_SIZE];
+    GDALRasterIOExtraArg extra_arg;
+    INIT_RASTERIO_EXTRA_ARG(extra_arg);
+    extra_arg.eResampleAlg = resample_alg;
 
     for (int b = 0; b < 4; b++) {
         int src_band = (b < 3) ? b + 1 : (band_count >= 4 ? 4 : 0);
 
         if (src_band > 0) {
             GDALRasterBandH band = GDALGetRasterBand(ds, src_band);
-            if (GDALRasterIO(band, GF_Read, read_x, read_y, read_w, read_h,
-                             band_buf, tile_w, tile_h, GDT_Byte, 0, 0) != CE_None) {
-                error("GDALRasterIO read failed for band %d", src_band);
+            if (GDALRasterIOEx(band, GF_Read, read_x, read_y, read_w, read_h,
+                               band_buf, tile_w, tile_h, GDT_Byte, 0, 0, &extra_arg) != CE_None) {
+                error("GDALRasterIOEx read failed for band %d", src_band);
                 free(tile_data);
                 return -1;
             }
@@ -371,9 +387,10 @@ int generate_tiles(const char *src_path,
                    int zoom_min,
                    int zoom_max,
                    const char *format,
+                   const char *resampling,
                    int num_workers,
                    bool resume) {
-    (void)resume;  /* TODO: implement resume */
+    GDALRIOResampleAlg resample_alg = parse_resampling(resampling);
 
     /* Open dataset to get tile list */
     GDALDatasetH ds = GDALOpen(src_path, GA_ReadOnly);
@@ -439,7 +456,7 @@ int generate_tiles(const char *src_path,
 
             for (int i = start; i < end; i++) {
                 int result = generate_tile(worker_ds, tiles[i].z, tiles[i].x, tiles[i].y,
-                                           outpath, tile_path, format, resume);
+                                           outpath, tile_path, format, resample_alg, resume);
                 if (result == 0) {
                     generated++;
                 } else if (result == 1) {

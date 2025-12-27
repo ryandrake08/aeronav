@@ -685,28 +685,27 @@ def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Process Aeronav data and create web map tiles.')
     # Config file
-    parser.add_argument('--config', default=_default_config_path(), help='Path to datasets.json config file.')
+    parser.add_argument('-c', '--config', default=_default_config_path(), help='Path to config file.')
     # Where to put the data
-    parser.add_argument('--zippath', help='Specify the directory containing downloaded Aeronav ZIP files.')
-    parser.add_argument('--tmppath', default='/tmp/aeronav2tiles', help='Specify the directory to store temporary files. Default is /tmp/aeronav2tiles.')
-    parser.add_argument('--outpath', help='Specify the directory to store the output tilesets.')
+    parser.add_argument('--zippath', help='Directory containing downloaded Aeronav ZIP files.')
+    parser.add_argument('-t', '--tmppath', default='/tmp/aeronav2tiles', help='Directory for temporary files. Default: /tmp/aeronav2tiles.')
+    parser.add_argument('-o', '--outpath', help='Output directory for tilesets.')
     # What to do
-    parser.add_argument('--all', action='store_true', help='Generate all tilesets, ignoring the --tilesets argument.')
-    parser.add_argument('--tilesets', nargs='*', help='Specify the tilesets to generate.')
-    parser.add_argument('--list-tilesets', action='store_true', help='List the available tilesets.')
-    parser.add_argument('--existing', action='store_true', help='[DEVELOPMENT] Use existing reprojected datasets.')
-    parser.add_argument('--single', help='[DEVELOPMENT] Process a single dataset.')
-    parser.add_argument('--cleanup', action='store_true', help='Remove the temporary directory and its contents after all processing.')
+    parser.add_argument('-s', '--tilesets', default='all', help='Comma-separated tileset names. Default: all.')
+    parser.add_argument('-l', '--list', action='store_true', help='List available tilesets and exit.')
+    parser.add_argument('--existing', action='store_true', help='[DEV] Use existing reprojected datasets.')
+    parser.add_argument('--single', help='[DEV] Process a single dataset.')
+    parser.add_argument('-C', '--cleanup', action='store_true', help='Remove temp directory after processing.')
     # How to do it
-    parser.add_argument('--epsg', type=int, default=3857, help='Specify the destination EPSG code for the output tiles. Default is 3857 (Web Mercator). Common alternatives: 3395 (Mercator).')
-    parser.add_argument('--reproject-resampling', default='bilinear', help='Specify the resampling method to use when reprojecting the data. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is bilinear.')
-    parser.add_argument('--tile-resampling', default='bilinear', help='Specify the resampling method to use when creating the tiles. Can be one of nearest,bilinear,cubic,cubicspline,lanczos,average,mode. Default is bilinear.')
-    parser.add_argument('--quiet', action='store_true', help='Suppress output and progress.')
+    parser.add_argument('-e', '--epsg', type=int, default=3857, help='Target EPSG code. Default: 3857.')
+    parser.add_argument('--reproject-resampling', default='bilinear', help='Resampling for reprojection. Default: bilinear.')
+    parser.add_argument('--tile-resampling', default='bilinear', help='Resampling for tile generation. Default: bilinear.')
+    parser.add_argument('-f', '--format', default='webp', choices=['png', 'jpeg', 'webp'], help='Tile format. Default: webp.')
+    parser.add_argument('-r', '--resume', action='store_true', help='Skip existing tiles.')
+    parser.add_argument('-q', '--quiet', action='store_true', help='Suppress output.')
     # Parallel processing
-    parser.add_argument('--zip-workers', type=int, default=os.cpu_count(), help=f'Parallel workers for zip extraction. Default: {os.cpu_count()}')
-    parser.add_argument('--expand-workers', type=int, default=os.cpu_count(), help=f'Parallel workers for RGB expansion. Default: {os.cpu_count()}')
-    parser.add_argument('--reproject-workers', type=int, default=os.cpu_count(), help=f'Parallel workers for reprojection. Default: {os.cpu_count()}.')
-    parser.add_argument('--tile-workers', type=int, default=os.cpu_count(), help=f'Parallel workers for tile generation. Default: {os.cpu_count()}.')
+    parser.add_argument('-j', '--jobs', type=int, default=os.cpu_count(), help=f'Concurrent dataset processes. Default: {os.cpu_count()}.')
+    parser.add_argument('-w', '--tile-workers', type=int, default=os.cpu_count(), help=f'Parallel workers for tile generation. Default: {os.cpu_count()}.')
     args = parser.parse_args()
 
     # Load config file
@@ -716,7 +715,7 @@ def main():
     cpu_count = os.cpu_count() or 1
 
     # List the available tilesets and exit
-    if args.list_tilesets:
+    if args.list:
         for tileset in tileset_datasets.keys():
             print(f'{tileset}')
         return
@@ -731,23 +730,21 @@ def main():
 
         if zip_files:
             if not args.quiet:
-                print(f'Extracting {len(zip_files)} zip files using {args.zip_workers} parallel processes')
+                print(f'Extracting {len(zip_files)} zip files using {cpu_count} parallel processes')
 
             # Create work items as tuples for the module-level extract_zip function
             work_items = [(args.zippath, f, args.tmppath, args.quiet) for f in zip_files]
 
-            with ProcessPoolExecutor(max_workers=args.zip_workers) as executor:
+            with ProcessPoolExecutor(max_workers=cpu_count) as executor:
                 list(executor.map(extract_zip, work_items))
 
     # Determine which tilesets to generate
-    if args.all:
-        tilesets = tileset_datasets.keys()
-    elif args.tilesets:
-        tilesets = args.tilesets
-    elif args.single:
+    if args.single:
         tilesets = [tileset_name for tileset_name, tileset_def in tileset_datasets.items() if args.single in tileset_def['datasets']]
+    elif args.tilesets.lower() == 'all':
+        tilesets = tileset_datasets.keys()
     else:
-        tilesets = []
+        tilesets = [t.strip() for t in args.tilesets.split(',')]
 
     # Phase 1: Collect all work items from all tilesets
     all_work_items = []
@@ -813,18 +810,18 @@ def main():
         # Pre-expand all unique input files to RGB in parallel
         unique_inputs = list(set(item['input_full_path'] for item in all_work_items))
         if not args.quiet:
-            print(f'Expanding {len(unique_inputs)} input files to RGB using {args.expand_workers} parallel processes')
+            print(f'Expanding {len(unique_inputs)} input files to RGB using {cpu_count} parallel processes')
         expand_work_items = [(f, args.quiet) for f in unique_inputs]
-        with ProcessPoolExecutor(max_workers=args.expand_workers) as executor:
+        with ProcessPoolExecutor(max_workers=cpu_count) as executor:
             list(executor.map(expand_to_rgb, expand_work_items))
 
         # Reproject all datasets in parallel
-        concurrent_processes = min(args.reproject_workers, len(all_work_items))
+        concurrent_processes = min(args.jobs, len(all_work_items))
         num_threads = max(1, cpu_count // concurrent_processes)
 
         if not args.quiet:
             print(f'Reprojecting {len(all_work_items)} datasets using {concurrent_processes} parallel processes ({num_threads} threads each)')
-        with ProcessPoolExecutor(max_workers=args.reproject_workers) as executor:
+        with ProcessPoolExecutor(max_workers=args.jobs) as executor:
             futures = []
             for item in all_work_items:
                 future = executor.submit(
@@ -880,9 +877,10 @@ def main():
                 min_zoom=min_zoom,
                 max_zoom=max_zoom,
                 resampling=args.tile_resampling,
-                tile_format='WEBP',
+                tile_format=args.format.upper(),
                 num_processes=args.tile_workers,
                 quiet=args.quiet,
+                resume=args.resume,
             )
 
     # Remove the temporary directory and its contents if remove is True

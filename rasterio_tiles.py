@@ -19,7 +19,6 @@ from rasterio.windows import from_bounds
 # Resampling method mapping from string names to rasterio enums
 RESAMPLING_METHODS = {
     'nearest': Resampling.nearest,
-    'near': Resampling.nearest,
     'bilinear': Resampling.bilinear,
     'cubic': Resampling.cubic,
     'cubicspline': Resampling.cubic_spline,
@@ -201,7 +200,7 @@ class TileGenerator:
             zoom_range: Tuple of (min_zoom, max_zoom)
             resampling: Resampling method name
             tile_size: Size of output tiles in pixels
-            tile_format: Output tile format (WEBP or PNG)
+            tile_format: Output tile format (PNG, JPEG, or WEBP)
             quiet: Suppress progress output
             resume: Skip existing tiles
         """
@@ -211,7 +210,7 @@ class TileGenerator:
         self.resampling = get_resampling(resampling)
         self.tile_size = tile_size
         self.tile_format = tile_format.upper()
-        self.tile_ext = '.webp' if self.tile_format == 'WEBP' else '.png'
+        self.tile_ext = {'WEBP': '.webp', 'JPEG': '.jpg', 'PNG': '.png'}.get(self.tile_format, '.png')
         self.quiet = quiet
         self.resume = resume
         self.mercator = GlobalMercator(tile_size)
@@ -592,8 +591,8 @@ def _create_tile_worker(
         output_path: Directory for output tiles
         resampling: Resampling method
         tile_size: Size of output tiles
-        tile_format: Output format driver (WEBP or PNG)
-        tile_ext: File extension (.webp or .png)
+        tile_format: Output format driver (PNG, JPEG, or WEBP)
+        tile_ext: File extension (.png, .jpg, or .webp)
         resume: Skip existing tiles
     """
     tx, ty, zoom = coords
@@ -665,7 +664,7 @@ def generate_tiles(
         min_zoom: Minimum zoom level
         max_zoom: Maximum zoom level
         resampling: Resampling method name (nearest, bilinear, cubic, etc.)
-        tile_format: Output tile format (WEBP or PNG)
+        tile_format: Output tile format (PNG, JPEG, or WEBP)
         num_processes: Number of parallel workers
         quiet: Suppress progress output
         resume: Skip existing tiles

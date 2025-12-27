@@ -403,25 +403,29 @@ cleanup:
 }
 
 /*
- * Warp dataset to EPSG:3857 (Web Mercator) at specified resolution.
+ * Warp dataset to target EPSG at specified resolution.
  * Returns 0 on success, -1 on error.
  * Always sets *out to new dataset on success (no no-op case).
  */
-static int warp_to_mercator(GDALDatasetH src, double resolution, int num_threads, GDALDatasetH *out) {
+static int warp_to_target(GDALDatasetH src, double resolution, int num_threads,
+                          int epsg, const char *resampling, GDALDatasetH *out) {
     if (!out) {
-        error("warp_to_mercator: NULL output parameter");
+        error("warp_to_target: NULL output parameter");
         return -1;
     }
     *out = NULL;
 
-    info("    Warping to EPSG:3857 at %.2f m/pixel...", resolution);
+    info("    Warping to EPSG:%d at %.2f m/pixel...", epsg, resolution);
 
     /* Build warp options */
     char **options = NULL;
     options = CSLAddString(options, "-of");
     options = CSLAddString(options, "MEM");
     options = CSLAddString(options, "-t_srs");
-    options = CSLAddString(options, "EPSG:3857");
+
+    char epsg_str[16];
+    snprintf(epsg_str, sizeof(epsg_str), "EPSG:%d", epsg);
+    options = CSLAddString(options, epsg_str);
     options = CSLAddString(options, "-tr");
 
     char res_str[32];
@@ -430,7 +434,7 @@ static int warp_to_mercator(GDALDatasetH src, double resolution, int num_threads
     options = CSLAddString(options, res_str);
 
     options = CSLAddString(options, "-r");
-    options = CSLAddString(options, "bilinear");
+    options = CSLAddString(options, resampling);
 
     /* Multi-threading */
     if (num_threads > 1) {
@@ -691,7 +695,9 @@ int process_dataset(const char *zippath,
                     const Dataset *dataset,
                     double resolution,
                     const char *outpath,
-                    int num_threads) {
+                    int num_threads,
+                    int epsg,
+                    const char *resampling) {
     info("  Opening %s from ZIP...", dataset->name);
 
     /* Build vsizip path: /vsizip/zippath/name.zip/input_file */
@@ -744,8 +750,8 @@ int process_dataset(const char *zippath,
         src = tmp;
     }
 
-    /* Step 4: Warp to EPSG:3857 */
-    if (warp_to_mercator(src, resolution, num_threads, &tmp) != 0) {
+    /* Step 4: Warp to target EPSG */
+    if (warp_to_target(src, resolution, num_threads, epsg, resampling, &tmp) != 0) {
         GDALClose(src);
         return -1;
     }
