@@ -661,6 +661,15 @@ static int save_to_file(GDALDatasetH ds, const char *outpath) {
         return -1;
     }
 
+    /* Set color interpretation before writing any data */
+    for (int i = 1; i <= band_count; i++) {
+        GDALRasterBandH src_band = GDALGetRasterBand(ds, i);
+        GDALRasterBandH dst_band = GDALGetRasterBand(out, i);
+        GDALSetRasterColorInterpretation(dst_band,
+            GDALGetRasterColorInterpretation(src_band));
+    }
+
+    /* Copy band data */
     for (int i = 1; i <= band_count; i++) {
         GDALRasterBandH src_band = GDALGetRasterBand(ds, i);
         GDALRasterBandH dst_band = GDALGetRasterBand(out, i);
@@ -682,9 +691,6 @@ static int save_to_file(GDALDatasetH ds, const char *outpath) {
                 return -1;
             }
         }
-
-        GDALSetRasterColorInterpretation(dst_band,
-            GDALGetRasterColorInterpretation(src_band));
     }
 
     free(scanline);
