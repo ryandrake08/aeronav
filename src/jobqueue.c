@@ -312,8 +312,10 @@ cleanup:
     JobMessage shutdown_msg = { .job_index = -1 };
     for (int i = 0; i < num_workers; i++) {
         if (workers[i].pid > 0) {
-            /* Send shutdown message */
-            write(workers[i].to_worker[1], &shutdown_msg, sizeof(shutdown_msg));
+            /* Send shutdown message (ignore errors during cleanup) */
+            if (write(workers[i].to_worker[1], &shutdown_msg, sizeof(shutdown_msg)) < 0) {
+                /* Worker may have already exited */
+            }
             close(workers[i].to_worker[1]);
             close(workers[i].from_worker[0]);
         }

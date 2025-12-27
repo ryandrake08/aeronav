@@ -151,9 +151,15 @@ static int load_config(const char *config_path) {
         return -1;
     }
 
-    fread(json_str, 1, len, f);
-    json_str[len] = '\0';
+    size_t bytes_read = fread(json_str, 1, len, f);
     fclose(f);
+
+    if (bytes_read != (size_t)len) {
+        error("Failed to read config file");
+        free(json_str);
+        return -1;
+    }
+    json_str[len] = '\0';
 
     /* Parse JSON */
     cJSON *root = cJSON_Parse(json_str);
