@@ -48,8 +48,6 @@ static int expand_to_rgb(GDALDatasetH src, GDALDatasetH *out) {
         return 0;
     }
 
-    info("    Expanding palette to RGB...");
-
     /* Use GDALTranslate with -expand rgb */
     char **options = NULL;
     options = CSLAddString(options, "-of");
@@ -93,8 +91,6 @@ static int apply_mask(GDALDatasetH src, const Mask *mask, GDALDatasetH *out) {
     if (!mask || mask->count == 0) {
         return 0;  /* No mask to apply */
     }
-
-    info("    Applying pixel mask (%d ring(s))...", mask->count);
 
     int width = GDALGetRasterXSize(src);
     int height = GDALGetRasterYSize(src);
@@ -269,59 +265,31 @@ static int apply_gcps(GDALDatasetH src, const GCP *gcps, GDALDatasetH *out) {
         return 0;  /* No GCPs to apply */
     }
 
-    info("    Applying %d GCPs...", gcps->count);
-
     int width = GDALGetRasterXSize(src);
     int height = GDALGetRasterYSize(src);
     int band_count = GDALGetRasterCount(src);
-    int result = -1;
-
-    /* Resources to clean up on exit */
-    GDALDatasetH dst = NULL;
-    unsigned char *band_data = NULL;
-    GDAL_GCP gdal_gcps[MAX_GCPS];
-    OGRSpatialReferenceH src_srs = NULL;
-    OGRSpatialReferenceH wgs84_srs = NULL;
-    OGRCoordinateTransformationH transform = NULL;
-
-    /*
-     * Get the source dataset's CRS and create a transformation from WGS84.
-     * GCPs are specified as lon/lat but the affine transform must be computed
-     * in the source CRS to avoid distortion from lat/lon convergence at high
-     * latitudes (e.g., in Lambert Conformal Conic the grid is more regular).
-     */
     const char *src_wkt = GDALGetProjectionRef(src);
-    if (src_wkt && strlen(src_wkt) > 0) {
-        src_srs = OSRNewSpatialReference(src_wkt);
-        if (src_srs) {
-            OSRSetAxisMappingStrategy(src_srs, OAMS_TRADITIONAL_GIS_ORDER);
-
-            wgs84_srs = OSRNewSpatialReference(NULL);
-            OSRImportFromEPSG(wgs84_srs, 4326);
-            OSRSetAxisMappingStrategy(wgs84_srs, OAMS_TRADITIONAL_GIS_ORDER);
-
-            transform = OCTNewCoordinateTransformation(wgs84_srs, src_srs);
-        }
-    }
+    bool has_src_crs = src_wkt && strlen(src_wkt) > 0;
 
     /* Create a copy of the dataset since we need to modify georeferencing */
     GDALDriverH mem_driver = GDALGetDriverByName("MEM");
     if (!mem_driver) {
         error("MEM driver not available");
-        goto cleanup;
+        return -1;
     }
 
-    dst = GDALCreate(mem_driver, "", width, height, band_count, GDT_Byte, NULL);
+    GDALDatasetH dst = GDALCreate(mem_driver, "", width, height, band_count, GDT_Byte, NULL);
     if (!dst) {
         error("Failed to create dataset for GCPs");
-        goto cleanup;
+        return -1;
     }
 
     /* Copy bands */
-    band_data = malloc(width * height);
+    unsigned char *band_data = malloc(width * height);
     if (!band_data) {
         error("Failed to allocate band buffer");
-        goto cleanup;
+        GDALClose(dst);
+        return -1;
     }
 
     for (int i = 1; i <= band_count; i++) {
@@ -331,21 +299,56 @@ static int apply_gcps(GDALDatasetH src, const GCP *gcps, GDALDatasetH *out) {
         if (GDALRasterIO(src_band, GF_Read, 0, 0, width, height,
                          band_data, width, height, GDT_Byte, 0, 0) != CE_None) {
             error("Failed to read source band %d", i);
-            goto cleanup;
+            free(band_data);
+            GDALClose(dst);
+            return -1;
         }
         if (GDALRasterIO(dst_band, GF_Write, 0, 0, width, height,
                          band_data, width, height, GDT_Byte, 0, 0) != CE_None) {
             error("Failed to write destination band %d", i);
-            goto cleanup;
+            free(band_data);
+            GDALClose(dst);
+            return -1;
         }
 
         GDALSetRasterColorInterpretation(dst_band, GDALGetRasterColorInterpretation(src_band));
     }
 
     free(band_data);
-    band_data = NULL;
+
+    /*
+     * Create coordinate transformation from WGS84 to source CRS.
+     * GCPs are specified as lon/lat but the affine transform must be computed
+     * in the source CRS to avoid distortion from lat/lon convergence at high
+     * latitudes (e.g., in Lambert Conformal Conic the grid is more regular).
+     */
+    OGRCoordinateTransformationH transform = NULL;
+    if (has_src_crs) {
+        OGRSpatialReferenceH src_srs = OSRNewSpatialReference(src_wkt);
+        if (!src_srs) {
+            error("Failed to parse source CRS");
+            GDALClose(dst);
+            return -1;
+        }
+        OSRSetAxisMappingStrategy(src_srs, OAMS_TRADITIONAL_GIS_ORDER);
+
+        OGRSpatialReferenceH wgs84_srs = OSRNewSpatialReference(NULL);
+        OSRImportFromEPSG(wgs84_srs, 4326);
+        OSRSetAxisMappingStrategy(wgs84_srs, OAMS_TRADITIONAL_GIS_ORDER);
+
+        transform = OCTNewCoordinateTransformation(wgs84_srs, src_srs);
+        OSRDestroySpatialReference(wgs84_srs);
+        OSRDestroySpatialReference(src_srs);
+
+        if (!transform) {
+            error("Failed to create coordinate transformation");
+            GDALClose(dst);
+            return -1;
+        }
+    }
 
     /* Create GDAL_GCP array, transforming lon/lat to source CRS */
+    GDAL_GCP gdal_gcps[MAX_GCPS];
     for (int i = 0; i < gcps->count; i++) {
         gdal_gcps[i].pszId = "";
         gdal_gcps[i].pszInfo = "";
@@ -362,20 +365,26 @@ static int apply_gcps(GDALDatasetH src, const GCP *gcps, GDALDatasetH *out) {
         gdal_gcps[i].dfGCPZ = 0;
     }
 
+    if (transform) {
+        OCTDestroyCoordinateTransformation(transform);
+    }
+
     /* Compute best-fit affine geotransform from GCPs */
     double geotransform[6];
     if (!GDALGCPsToGeoTransform(gcps->count, gdal_gcps, geotransform, TRUE)) {
         error("Failed to compute geotransform from GCPs");
-        goto cleanup;
+        GDALClose(dst);
+        return -1;
     }
 
     /* Set geotransform and CRS on output dataset */
     if (GDALSetGeoTransform(dst, geotransform) != CE_None) {
         error("Failed to set geotransform");
-        goto cleanup;
+        GDALClose(dst);
+        return -1;
     }
 
-    if (src_srs) {
+    if (has_src_crs) {
         GDALSetProjection(dst, src_wkt);
     } else {
         /* Fallback to WGS84 if source has no CRS */
@@ -389,18 +398,8 @@ static int apply_gcps(GDALDatasetH src, const GCP *gcps, GDALDatasetH *out) {
         OSRDestroySpatialReference(fallback);
     }
 
-    /* Success */
     *out = dst;
-    dst = NULL;  /* Prevent cleanup from closing it */
-    result = 0;
-
-cleanup:
-    if (dst) GDALClose(dst);
-    free(band_data);
-    if (transform) OCTDestroyCoordinateTransformation(transform);
-    if (wgs84_srs) OSRDestroySpatialReference(wgs84_srs);
-    if (src_srs) OSRDestroySpatialReference(src_srs);
-    return result;
+    return 0;
 }
 
 /*
@@ -415,8 +414,6 @@ static int warp_to_target(GDALDatasetH src, double resolution, int num_threads,
         return -1;
     }
     *out = NULL;
-
-    info("    Warping to EPSG:%d at %.2f m/pixel...", epsg, resolution);
 
     /* Build warp options */
     char **options = NULL;
@@ -492,8 +489,6 @@ static int clip_to_bounds(GDALDatasetH src, const GeoBounds *bounds, GDALDataset
     if (!has_bounds) {
         return 0;  /* No bounds specified */
     }
-
-    info("    Clipping to geographic bounds...");
 
     /* Get source bounds in its CRS (should be EPSG:3857) */
     double gt[6];
@@ -719,71 +714,80 @@ static int process_dataset(const char *zippath,
         return -1;
     }
 
-    info("    Opened: %dx%d, %d bands",
+    info("    %s Opened: %dx%d, %d bands", dataset->name,
          GDALGetRasterXSize(src), GDALGetRasterYSize(src), GDALGetRasterCount(src));
 
     GDALDatasetH tmp;
 
     /* Step 1: RGB expansion if needed */
+    info("  %s Ensuring bands are rgb", dataset->name);
     if (expand_to_rgb(src, &tmp) != 0) {
         GDALClose(src);
         return -1;
     }
     if (tmp) {
         GDALClose(src);
+        info("    %s Expanded to rgb bands", dataset->name);
         src = tmp;
-        info("    Expanded to %d bands", GDALGetRasterCount(src));
     }
 
     /* Step 2: Apply pixel-space mask */
+    if (dataset->mask && dataset->mask->count > 0) {
+        info("  %s Applying pixel mask (%d rings)...", dataset->name, dataset->mask->count);
+    }
     if (apply_mask(src, dataset->mask, &tmp) != 0) {
         GDALClose(src);
         return -1;
     }
     if (tmp) {
         GDALClose(src);
+        info("    %s Applied pixel mask (%d rings)...", dataset->name, dataset->mask->count);
         src = tmp;
-        info("    Masked: %dx%d, %d bands",
-             GDALGetRasterXSize(src), GDALGetRasterYSize(src), GDALGetRasterCount(src));
     }
 
     /* Step 3: Apply GCPs if present */
+    if (dataset->gcps && dataset->gcps->count > 0) {
+        info("  %s Applying %d GCPs...", dataset->name, dataset->gcps->count);
+    }
     if (apply_gcps(src, dataset->gcps, &tmp) != 0) {
         GDALClose(src);
         return -1;
     }
     if (tmp) {
         GDALClose(src);
+        info("    %s Applied %d GCPs...", dataset->name, dataset->gcps->count);
         src = tmp;
     }
 
     /* Step 4: Warp to target EPSG */
+    info("  %s Warping to EPSG:%d at %.2f m/pixel...", dataset->name, epsg, resolution);
     if (warp_to_target(src, resolution, num_threads, epsg, resampling, &tmp) != 0) {
         GDALClose(src);
         return -1;
     }
     GDALClose(src);
+    info("    %s Warped to EPSG:%d at %.2f m/pixel...", dataset->name, epsg, resolution);
     src = tmp;
 
-    info("    Warped: %dx%d",
-         GDALGetRasterXSize(src), GDALGetRasterYSize(src));
-
     /* Step 5: Clip to geographic bounds */
+    if (dataset->geobound) {
+        info("  %s Clipping to geographic bounds...", dataset->name);
+    }
     if (clip_to_bounds(src, dataset->geobound, &tmp) != 0) {
         GDALClose(src);
         return -1;
     }
     if (tmp) {
         GDALClose(src);
+        info("    %s Clipped to geographic bounds...", dataset->name);
         src = tmp;
-        info("    Clipped: %dx%d",
-             GDALGetRasterXSize(src), GDALGetRasterYSize(src));
     }
 
     /* Step 6: Save to output file */
-    info("    Saving to %s...", outpath);
+    info("  %s Saving to %s...", dataset->name, outpath);
     int result = save_to_file(src, outpath);
     GDALClose(src);
+    info("    %s Saved to %s", dataset->name, outpath);
 
     return result;
 }
