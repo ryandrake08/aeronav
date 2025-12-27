@@ -808,7 +808,48 @@ typedef struct {
     int num_threads;              /* Threads per job for warping */
     int epsg;                     /* Target EPSG code */
     const char *resampling;       /* Resampling method */
+    double estimated_work;        /* Estimated work for sorting (larger = more work) */
 } DatasetJob;
+
+/*
+ * Estimate work for a dataset based on mask bounding box.
+ * Datasets with larger areas are processed first to reduce job starvation.
+ */
+static double estimate_work(const Dataset *dataset) {
+    if (!dataset->mask || dataset->mask->count == 0) {
+        return 0.0;  /* No mask = unknown size, sort to end */
+    }
+
+    /* Compute bounding box of outer ring */
+    const Ring *outer = &dataset->mask->rings[0];
+    if (outer->count == 0) {
+        return 0.0;
+    }
+
+    double min_x = outer->vertices[0].x;
+    double max_x = outer->vertices[0].x;
+    double min_y = outer->vertices[0].y;
+    double max_y = outer->vertices[0].y;
+
+    for (int i = 1; i < outer->count; i++) {
+        if (outer->vertices[i].x < min_x) min_x = outer->vertices[i].x;
+        if (outer->vertices[i].x > max_x) max_x = outer->vertices[i].x;
+        if (outer->vertices[i].y < min_y) min_y = outer->vertices[i].y;
+        if (outer->vertices[i].y > max_y) max_y = outer->vertices[i].y;
+    }
+
+    return (max_x - min_x) * (max_y - min_y);
+}
+
+/* Comparison function for qsort - sort by descending estimated work */
+static int compare_jobs_by_work(const void *a, const void *b) {
+    const DatasetJob *ja = (const DatasetJob *)a;
+    const DatasetJob *jb = (const DatasetJob *)b;
+
+    if (jb->estimated_work > ja->estimated_work) return 1;
+    if (jb->estimated_work < ja->estimated_work) return -1;
+    return 0;
+}
 
 static int dataset_worker_init(int worker_id, void *init_data) {
     (void)worker_id;
@@ -892,11 +933,16 @@ int process_datasets_parallel(
             job->num_threads = threads_per_job;
             job->epsg = epsg;
             job->resampling = resampling;
+            job->estimated_work = estimate_work(dataset);
             snprintf(job->temp_file, PATH_SIZE, "%s/%s", tmppath, dataset->tmp_file);
         }
     }
 
     int actual_job_count = job_index;
+
+    /* Sort jobs by estimated work (largest first) to reduce straggler effect */
+    qsort(jobs, actual_job_count, sizeof(DatasetJob), compare_jobs_by_work);
+
     info("\nProcessing %d datasets with %d parallel workers...",
          actual_job_count, num_workers);
 
