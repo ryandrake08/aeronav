@@ -45,10 +45,8 @@ static void worker_loop(int worker_id,
                         int read_fd, int write_fd,
                         const JobQueueConfig *config) {
     /* Initialize worker resources */
-    void *worker_ctx = NULL;
     if (config->worker_init) {
-        worker_ctx = config->worker_init(worker_id, config->init_data);
-        if (!worker_ctx) {
+        if (config->worker_init(worker_id, config->init_data) != 0) {
             JQ_ERROR("worker %d: initialization failed", worker_id);
             _exit(1);
         }
@@ -73,18 +71,13 @@ static void worker_loop(int worker_id,
 
         /* Execute the job */
         status.job_index = msg.job_index;
-        status.status = config->job_func(msg.job_index, config->job_data, worker_ctx);
+        status.status = config->job_func(msg.job_index, config->job_data);
 
         /* Send completion status to parent */
         if (write(write_fd, &status, sizeof(status)) != sizeof(status)) {
             JQ_ERROR("worker %d: failed to write status", worker_id);
             break;
         }
-    }
-
-    /* Cleanup worker resources */
-    if (config->worker_cleanup && worker_ctx) {
-        config->worker_cleanup(worker_ctx);
     }
 
     close(read_fd);

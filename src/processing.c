@@ -806,15 +806,9 @@ typedef struct {
     const char *resampling;       /* Resampling method */
 } DatasetJob;
 
-/*
- * Worker context (returned by worker_init).
- */
-typedef struct {
-    int worker_id;
-} WorkerContext;
-
-static void *dataset_worker_init(int worker_id, void *init_data) {
-    (void)init_data;  /* Unused */
+static int dataset_worker_init(int worker_id, void *init_data) {
+    (void)worker_id;
+    (void)init_data;
 
     /* Initialize GDAL in this worker process */
     GDALAllRegister();
@@ -822,28 +816,12 @@ static void *dataset_worker_init(int worker_id, void *init_data) {
     /* Use GeoTIFF embedded CRS parameters instead of EPSG registry */
     CPLSetConfigOption("GTIFF_SRS_SOURCE", "GEOKEYS");
 
-    WorkerContext *ctx = malloc(sizeof(WorkerContext));
-    if (!ctx) {
-        error("Worker %d: failed to allocate context", worker_id);
-        return NULL;
-    }
-    ctx->worker_id = worker_id;
-
-    return ctx;
+    return 0;
 }
 
-static void dataset_worker_cleanup(void *worker_ctx) {
-    if (worker_ctx) {
-        free(worker_ctx);
-    }
-    /* Note: GDAL cleanup is automatic on process exit */
-}
-
-static int dataset_job_func(int job_index, void *job_data, void *worker_ctx) {
+static int dataset_job_func(int job_index, void *job_data) {
     DatasetJob *jobs = (DatasetJob *)job_data;
     DatasetJob *job = &jobs[job_index];
-
-    (void)worker_ctx;  /* Currently unused */
 
     return process_dataset(
         job->zippath,
@@ -925,7 +903,6 @@ int process_datasets_parallel(
         .job_data = jobs,
         .job_func = dataset_job_func,
         .worker_init = dataset_worker_init,
-        .worker_cleanup = dataset_worker_cleanup,
         .init_data = NULL,
     };
 

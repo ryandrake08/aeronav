@@ -21,11 +21,10 @@
  * Parameters:
  *   job_index   - Index of the job to execute
  *   job_data    - Opaque pointer to job data array (cast to appropriate type)
- *   worker_ctx  - Opaque pointer to worker context (e.g., initialized resources)
  *
  * Returns 0 on success, non-zero on failure.
  */
-typedef int (*job_func_t)(int job_index, void *job_data, void *worker_ctx);
+typedef int (*job_func_t)(int job_index, void *job_data);
 
 /*
  * Worker initialization function type.
@@ -35,18 +34,9 @@ typedef int (*job_func_t)(int job_index, void *job_data, void *worker_ctx);
  *   worker_id   - Worker identifier (0 to max_workers-1)
  *   init_data   - Opaque pointer to initialization data
  *
- * Returns pointer to worker context (passed to job_func), or NULL on failure.
+ * Returns 0 on success, non-zero on failure.
  */
-typedef void *(*worker_init_t)(int worker_id, void *init_data);
-
-/*
- * Worker cleanup function type.
- * Called once per worker before exit to clean up worker-specific resources.
- *
- * Parameters:
- *   worker_ctx  - Worker context returned by worker_init
- */
-typedef void (*worker_cleanup_t)(void *worker_ctx);
+typedef int (*worker_init_t)(int worker_id, void *init_data);
 
 /*
  * Job queue configuration.
@@ -57,7 +47,6 @@ typedef struct {
     void *job_data;               /* Opaque pointer to job data array */
     job_func_t job_func;          /* Function to execute each job */
     worker_init_t worker_init;    /* Optional: worker initialization function */
-    worker_cleanup_t worker_cleanup; /* Optional: worker cleanup function */
     void *init_data;              /* Optional: data passed to worker_init */
 } JobQueueConfig;
 
@@ -76,7 +65,6 @@ typedef struct {
  * 1. Calls worker_init (if provided) to initialize resources
  * 2. Receives job indices from parent, executes them via job_func
  * 3. Signals completion status back to parent
- * 4. Calls worker_cleanup (if provided) before exiting
  *
  * The parent process manages the queue, dispatching jobs to idle workers
  * until all jobs are complete.
