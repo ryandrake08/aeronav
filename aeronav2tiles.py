@@ -75,6 +75,8 @@ def load_config(config_path=None):
         if 'gcps' in ds:
             # Convert list of lists to list of tuples
             entry['gcps'] = [tuple(gcp) for gcp in ds['gcps']]
+        if 'max_lod' in ds:
+            entry['max_lod'] = ds['max_lod']
         datasets[name] = entry
 
     # Convert tilesets to expected format
@@ -83,7 +85,6 @@ def load_config(config_path=None):
         tileset_datasets[name] = {
             'tile_path': ts['tile_path'],
             'zoom': ts['zoom'],  # [min, max] array
-            'maxlod_zoom': ts['maxlod_zoom'],
             'datasets': ts['datasets'],
         }
 
@@ -753,10 +754,6 @@ def main():
     for tileset_name in tilesets:
         tileset_def = tileset_datasets[tileset_name]
 
-        # Calculate the reprojection resolution for this tileset
-        maxlod_zoom = tileset_def['maxlod_zoom']
-        resolution = calculate_resolution_for_zoom(maxlod_zoom, args.epsg)
-
         reprojected_files = []
         dataset_names = tileset_def['datasets']
 
@@ -772,6 +769,10 @@ def main():
             if not args.existing:
                 # Get the dataset definition
                 dataset_def = datasets[dataset_name]
+
+                # Calculate the reprojection resolution for this dataset
+                max_lod = dataset_def['max_lod']
+                resolution = calculate_resolution_for_zoom(max_lod, args.epsg)
 
                 # Determine the input file path
                 input_file = dataset_def.get('input_file', f'{dataset_name}.tif')

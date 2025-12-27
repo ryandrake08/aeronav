@@ -217,6 +217,9 @@ static int load_config(const char *config_path) {
         ds->geobound = parse_geobound(cJSON_GetObjectItem(ds_json, "geobound"));
         ds->gcps = parse_gcps(cJSON_GetObjectItem(ds_json, "gcps"));
 
+        cJSON *max_lod = cJSON_GetObjectItem(ds_json, "max_lod");
+        ds->max_lod = max_lod ? (int)cJSON_GetNumberValue(max_lod) : 0;
+
         i++;
     }
 
@@ -249,9 +252,6 @@ static int load_config(const char *config_path) {
         cJSON *zoom = cJSON_GetObjectItem(ts_json, "zoom");
         ts->zoom_min = (int)cJSON_GetNumberValue(cJSON_GetArrayItem(zoom, 0));
         ts->zoom_max = (int)cJSON_GetNumberValue(cJSON_GetArrayItem(zoom, 1));
-
-        cJSON *maxlod = cJSON_GetObjectItem(ts_json, "maxlod_zoom");
-        ts->maxlod_zoom = (int)cJSON_GetNumberValue(maxlod);
 
         cJSON *ds_array = cJSON_GetObjectItem(ts_json, "datasets");
         ts->dataset_count = cJSON_GetArraySize(ds_array);

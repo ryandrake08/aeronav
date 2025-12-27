@@ -803,7 +803,7 @@ static int process_dataset(const char *zippath,
 typedef struct {
     const char *zippath;          /* Directory containing ZIP files */
     const Dataset *dataset;       /* Dataset to process */
-    double resolution;            /* Target resolution (from tileset maxlod_zoom) */
+    double resolution;            /* Target resolution (from dataset max_lod) */
     char temp_file[PATH_SIZE];    /* Output temp file path */
     int num_threads;              /* Threads per job for warping */
     int epsg;                     /* Target EPSG code */
@@ -910,14 +910,11 @@ int process_datasets_parallel(
     int job_index = 0;
     for (int t = 0; t < tileset_count; t++) {
         const Tileset *tileset = tilesets[t];
-        double resolution = resolution_for_zoom(tileset->maxlod_zoom);
 
         info("\n=== Tileset: %s ===", tileset->name);
         info("  Output path: %s", tileset->tile_path);
-        info("  Zoom range: %d-%d (maxlod: %d)",
-             tileset->zoom_min, tileset->zoom_max, tileset->maxlod_zoom);
+        info("  Zoom range: %d-%d", tileset->zoom_min, tileset->zoom_max);
         info("  Datasets: %d", tileset->dataset_count);
-        info("  Resolution: %.6f m/pixel", resolution);
 
         for (int d = 0; d < tileset->dataset_count; d++) {
             const Dataset *dataset = get_dataset(tileset->datasets[d]);
@@ -925,6 +922,8 @@ int process_datasets_parallel(
                 error("Unknown dataset: %s", tileset->datasets[d]);
                 continue;
             }
+
+            double resolution = resolution_for_zoom(dataset->max_lod);
 
             DatasetJob *job = &jobs[job_index++];
             job->zippath = zippath;

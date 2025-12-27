@@ -79,6 +79,7 @@ typedef struct {
     Mask *mask;           /* Pixel-space mask, or NULL */
     GeoBounds *geobound;  /* Geographic clip bounds, or NULL */
     GCP *gcps;            /* Ground control points, or NULL */
+    int max_lod;          /* Max level of detail (determines resolution) */
 } Dataset;
 
 /* Tileset definition */
@@ -87,7 +88,6 @@ typedef struct {
     char *tile_path;      /* Output subdirectory (e.g., "sec") */
     int zoom_min;               /* Minimum zoom level */
     int zoom_max;               /* Maximum zoom level */
-    int maxlod_zoom;            /* Max level of detail (determines resolution) */
     char **datasets;      /* Array of dataset names */
     int dataset_count;          /* Number of datasets */
 } Tileset;
