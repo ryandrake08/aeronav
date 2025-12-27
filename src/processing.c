@@ -861,6 +861,9 @@ static void *dataset_worker_init(int worker_id, void *init_data) {
     /* Initialize GDAL in this worker process */
     GDALAllRegister();
 
+    /* Use GeoTIFF embedded CRS parameters instead of EPSG registry */
+    CPLSetConfigOption("GTIFF_SRS_SOURCE", "GEOKEYS");
+
     WorkerContext *ctx = malloc(sizeof(WorkerContext));
     if (!ctx) {
         error("Worker %d: failed to allocate context", worker_id);
