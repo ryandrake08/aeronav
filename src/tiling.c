@@ -84,13 +84,9 @@ static int generate_tile(GDALDatasetH ds,
                          const char *format,
                          GDALRIOResampleAlg resample_alg,
                          bool resume) {
-    /* Build output path early for resume check */
-    char dir_path[PATH_SIZE];
-    char file_path[PATH_SIZE];
-    snprintf(dir_path, sizeof(dir_path), "%s/%s/%d/%d", outpath, tile_path, z, x);
-    snprintf(file_path, sizeof(file_path), "%s/%d.%s", dir_path, y, format);
-
     /* Resume mode: skip if tile already exists */
+    char file_path[PATH_SIZE];
+    snprintf(file_path, sizeof(file_path), "%s/%s/%d/%d/%d.%s", outpath, tile_path, z, x, y, format);
     if (resume) {
         struct stat st;
         if (stat(file_path, &st) == 0) {
@@ -235,6 +231,8 @@ static int generate_tile(GDALDatasetH ds,
     }
 
     /* Create output directory */
+    char dir_path[PATH_SIZE];
+    snprintf(dir_path, sizeof(dir_path), "%s/%s/%d/%d", outpath, tile_path, z, x);
     if (mkdir_p(dir_path) != 0) {
         error("Failed to create directory: %s", dir_path);
         free(tile_data);
