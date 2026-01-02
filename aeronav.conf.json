@@ -1764,7 +1764,7 @@
     },
     "Route Planning": {
       "tile_path": "route",
-      "datasets": ["NARC", "PORC_COMP", "PORC_NE", "PORC_NW", "PORC_SE", "PORC_SW", "WATRS", "GOA_CN", "GOA_CS", "GOA_WN", "GOA_WS"]
+      "datasets": ["NARC", "PORC_NE", "PORC_NW", "PORC_SE", "PORC_SW", "WATRS", "GOA_CN", "GOA_CS", "GOA_WN", "GOA_WS"]
     }
   }
 }
