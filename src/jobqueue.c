@@ -19,6 +19,10 @@
 /* Simple error logging macro */
 #define JQ_ERROR(fmt, ...) fprintf(stderr, "jobqueue: " fmt "\n", ##__VA_ARGS__)
 
+/* ANSI escape codes for terminal control */
+#define ANSI_CLEAR_LINE "\033[K"
+#define ANSI_CURSOR_UP  "\033[A"
+
 /* Message types for IPC */
 typedef struct {
     int job_index;    /* Job index, or -1 for "shutdown" */
@@ -107,6 +111,45 @@ static int receive_status(WorkerState *worker, StatusMessage *status) {
     }
     worker->current_job = -1;
     return 0;
+}
+
+/*
+ * Display progress: shows completion count and each worker's current job.
+ * Uses ANSI codes to update in place.
+ */
+static void display_progress(const JobQueueConfig *config,
+                             const WorkerState *workers,
+                             int num_workers,
+                             int jobs_completed,
+                             int prev_lines) {
+    /* Move cursor up to overwrite previous display */
+    for (int i = 0; i < prev_lines; i++) {
+        fprintf(stderr, ANSI_CURSOR_UP);
+    }
+
+    /* Show overall progress */
+    fprintf(stderr, "Processing: %d/%d complete" ANSI_CLEAR_LINE "\n",
+            jobs_completed, config->num_jobs);
+
+    /* Show each worker's status */
+    for (int i = 0; i < num_workers; i++) {
+        const char *status;
+        if (!workers[i].active) {
+            status = "dead";
+        } else if (workers[i].current_job < 0) {
+            status = "idle";
+        } else if (config->job_names) {
+            status = config->job_names[workers[i].current_job];
+        } else {
+            /* Fallback if no names provided */
+            static char buf[32];
+            snprintf(buf, sizeof(buf), "job %d", workers[i].current_job);
+            status = buf;
+        }
+        fprintf(stderr, "  W%d: %s" ANSI_CLEAR_LINE "\n", i, status);
+    }
+
+    fflush(stderr);
 }
 
 int jobqueue_run(const JobQueueConfig *config, JobQueueResult *result) {
@@ -225,6 +268,15 @@ int jobqueue_run(const JobQueueConfig *config, JobQueueResult *result) {
         }
     }
 
+    /* Display lines = 1 (progress line) + num_workers (worker lines) */
+    int display_lines = 1 + num_workers;
+
+    /* Show initial progress (first display, no lines to overwrite) */
+    for (int i = 0; i < display_lines; i++) {
+        fprintf(stderr, "\n");
+    }
+    display_progress(config, workers, num_workers, jobs_completed, display_lines);
+
     /* Main dispatch loop */
     while (jobs_completed < config->num_jobs) {
         /* Count active workers */
@@ -288,6 +340,9 @@ int jobqueue_run(const JobQueueConfig *config, JobQueueResult *result) {
                 workers[i].active = false;
             }
         }
+
+        /* Update progress display */
+        display_progress(config, workers, num_workers, jobs_completed, display_lines);
     }
 
     free(fds);

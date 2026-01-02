@@ -48,6 +48,7 @@ typedef struct {
     job_func_t job_func;          /* Function to execute each job */
     worker_init_t worker_init;    /* Optional: worker initialization function */
     void *init_data;              /* Optional: data passed to worker_init */
+    const char **job_names;       /* Optional: job names for progress display */
 } JobQueueConfig;
 
 /*

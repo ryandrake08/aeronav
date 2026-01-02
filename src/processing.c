@@ -25,16 +25,71 @@
 #include <cpl_string.h>
 
 /*
+ * Calculate mask bounding box.
+ * Returns 1 if valid bbox found, 0 if no mask or empty.
+ */
+static int get_mask_bbox(const Mask *mask, int src_width, int src_height,
+                         int *out_min_x, int *out_min_y,
+                         int *out_width, int *out_height) {
+    if (!mask || mask->count == 0) {
+        return 0;
+    }
+
+    const Ring *outer = &mask->rings[0];
+    if (outer->count == 0) {
+        return 0;
+    }
+
+    int min_x = (int)outer->vertices[0].x;
+    int max_x = (int)outer->vertices[0].x;
+    int min_y = (int)outer->vertices[0].y;
+    int max_y = (int)outer->vertices[0].y;
+
+    for (int i = 1; i < outer->count; i++) {
+        int x = (int)outer->vertices[i].x;
+        int y = (int)outer->vertices[i].y;
+        if (x < min_x) min_x = x;
+        if (x > max_x) max_x = x;
+        if (y < min_y) min_y = y;
+        if (y > max_y) max_y = y;
+    }
+
+    /* Clamp to source image bounds */
+    if (min_x < 0) min_x = 0;
+    if (min_y < 0) min_y = 0;
+    if (max_x > src_width) max_x = src_width;
+    if (max_y > src_height) max_y = src_height;
+
+    int width = max_x - min_x;
+    int height = max_y - min_y;
+
+    if (width <= 0 || height <= 0) {
+        return 0;
+    }
+
+    *out_min_x = min_x;
+    *out_min_y = min_y;
+    *out_width = width;
+    *out_height = height;
+    return 1;
+}
+
+/*
  * Expand paletted image to RGB.
+ * If mask is provided, only expands the mask bounding box window.
  * Returns 0 on success, -1 on error.
  * Sets *out to new dataset if expansion was performed, NULL if no-op.
+ * Sets *win_offset_x and *win_offset_y to the window offset if srcwin was used.
  */
-static int expand_to_rgb(GDALDatasetH src, GDALDatasetH *out) {
+static int expand_to_rgb(GDALDatasetH src, const Mask *mask, GDALDatasetH *out,
+                         int *win_offset_x, int *win_offset_y) {
     if (!out) {
         error("expand_to_rgb: NULL output parameter");
         return -1;
     }
     *out = NULL;
+    if (win_offset_x) *win_offset_x = 0;
+    if (win_offset_y) *win_offset_y = 0;
 
     GDALRasterBandH band = GDALGetRasterBand(src, 1);
     if (!band) {
@@ -55,6 +110,27 @@ static int expand_to_rgb(GDALDatasetH src, GDALDatasetH *out) {
     options = CSLAddString(options, "-expand");
     options = CSLAddString(options, "rgb");
 
+    /* If mask provided, add -srcwin to only expand the needed window */
+    int bbox_min_x, bbox_min_y, bbox_width, bbox_height;
+    int has_bbox = get_mask_bbox(mask,
+                                 GDALGetRasterXSize(src),
+                                 GDALGetRasterYSize(src),
+                                 &bbox_min_x, &bbox_min_y,
+                                 &bbox_width, &bbox_height);
+
+    if (has_bbox) {
+        char buf[64];
+        options = CSLAddString(options, "-srcwin");
+        snprintf(buf, sizeof(buf), "%d", bbox_min_x);
+        options = CSLAddString(options, buf);
+        snprintf(buf, sizeof(buf), "%d", bbox_min_y);
+        options = CSLAddString(options, buf);
+        snprintf(buf, sizeof(buf), "%d", bbox_width);
+        options = CSLAddString(options, buf);
+        snprintf(buf, sizeof(buf), "%d", bbox_height);
+        options = CSLAddString(options, buf);
+    }
+
     GDALTranslateOptions *translate_opts = GDALTranslateOptionsNew(options, NULL);
     CSLDestroy(options);
 
@@ -72,16 +148,36 @@ static int expand_to_rgb(GDALDatasetH src, GDALDatasetH *out) {
         return -1;
     }
 
+    /* If we used srcwin, adjust geotransform and report offset */
+    if (has_bbox) {
+        double gt[6];
+        if (GDALGetGeoTransform(src, gt) == CE_None) {
+            double new_gt[6];
+            new_gt[0] = gt[0] + bbox_min_x * gt[1] + bbox_min_y * gt[2];
+            new_gt[1] = gt[1];
+            new_gt[2] = gt[2];
+            new_gt[3] = gt[3] + bbox_min_x * gt[4] + bbox_min_y * gt[5];
+            new_gt[4] = gt[4];
+            new_gt[5] = gt[5];
+            GDALSetGeoTransform(result, new_gt);
+        }
+        if (win_offset_x) *win_offset_x = bbox_min_x;
+        if (win_offset_y) *win_offset_y = bbox_min_y;
+    }
+
     *out = result;
     return 0;
 }
 
 /*
  * Apply pixel-space mask to dataset.
+ * win_offset_x/y: if the source was already windowed (e.g., by expand_to_rgb),
+ *                 these values indicate the offset so mask coords can be adjusted.
  * Returns 0 on success, -1 on error.
  * Sets *out to new dataset if mask was applied, NULL if no-op.
  */
-static int apply_mask(GDALDatasetH src, const Mask *mask, GDALDatasetH *out) {
+static int apply_mask(GDALDatasetH src, const Mask *mask,
+                      int win_offset_x, int win_offset_y, GDALDatasetH *out) {
     if (!out) {
         error("apply_mask: NULL output parameter");
         return -1;
@@ -92,11 +188,45 @@ static int apply_mask(GDALDatasetH src, const Mask *mask, GDALDatasetH *out) {
         return 0;  /* No mask to apply */
     }
 
-    int width = GDALGetRasterXSize(src);
-    int height = GDALGetRasterYSize(src);
+    int src_width = GDALGetRasterXSize(src);
+    int src_height = GDALGetRasterYSize(src);
     int src_band_count = GDALGetRasterCount(src);
 
-    /* Create new dataset with RGBA (add alpha if not present) */
+    /* Calculate mask bounding box, adjusted for any prior windowing */
+    const Ring *outer = &mask->rings[0];
+    if (outer->count == 0) {
+        return 0;  /* Empty mask */
+    }
+
+    int min_x = (int)outer->vertices[0].x - win_offset_x;
+    int max_x = (int)outer->vertices[0].x - win_offset_x;
+    int min_y = (int)outer->vertices[0].y - win_offset_y;
+    int max_y = (int)outer->vertices[0].y - win_offset_y;
+
+    for (int i = 1; i < outer->count; i++) {
+        int x = (int)outer->vertices[i].x - win_offset_x;
+        int y = (int)outer->vertices[i].y - win_offset_y;
+        if (x < min_x) min_x = x;
+        if (x > max_x) max_x = x;
+        if (y < min_y) min_y = y;
+        if (y > max_y) max_y = y;
+    }
+
+    /* Clamp to source image bounds */
+    if (min_x < 0) min_x = 0;
+    if (min_y < 0) min_y = 0;
+    if (max_x > src_width) max_x = src_width;
+    if (max_y > src_height) max_y = src_height;
+
+    int window_width = max_x - min_x;
+    int window_height = max_y - min_y;
+
+    if (window_width <= 0 || window_height <= 0) {
+        error("Invalid mask bounding box");
+        return -1;
+    }
+
+    /* Create new dataset with only the window dimensions */
     GDALDriverH mem_driver = GDALGetDriverByName("MEM");
     if (!mem_driver) {
         error("MEM driver not available");
@@ -115,14 +245,14 @@ static int apply_mask(GDALDatasetH src, const Mask *mask, GDALDatasetH *out) {
     int dst_band_count = has_alpha ? src_band_count : src_band_count + 1;
     int alpha_band_num = dst_band_count;
 
-    GDALDatasetH dst = GDALCreate(mem_driver, "", width, height, dst_band_count, GDT_Byte, NULL);
+    GDALDatasetH dst = GDALCreate(mem_driver, "", window_width, window_height, dst_band_count, GDT_Byte, NULL);
     if (!dst) {
         error("Failed to create masked dataset");
         return -1;
     }
 
-    /* Copy source bands */
-    unsigned char *band_data = malloc(width * height);
+    /* Copy only the window from source bands */
+    unsigned char *band_data = malloc(window_width * window_height);
     if (!band_data) {
         error("Failed to allocate band buffer");
         GDALClose(dst);
@@ -133,15 +263,15 @@ static int apply_mask(GDALDatasetH src, const Mask *mask, GDALDatasetH *out) {
         GDALRasterBandH src_band = GDALGetRasterBand(src, i);
         GDALRasterBandH dst_band = GDALGetRasterBand(dst, i);
 
-        if (GDALRasterIO(src_band, GF_Read, 0, 0, width, height,
-                         band_data, width, height, GDT_Byte, 0, 0) != CE_None) {
+        if (GDALRasterIO(src_band, GF_Read, min_x, min_y, window_width, window_height,
+                         band_data, window_width, window_height, GDT_Byte, 0, 0) != CE_None) {
             error("Failed to read source band %d", i);
             free(band_data);
             GDALClose(dst);
             return -1;
         }
-        if (GDALRasterIO(dst_band, GF_Write, 0, 0, width, height,
-                         band_data, width, height, GDT_Byte, 0, 0) != CE_None) {
+        if (GDALRasterIO(dst_band, GF_Write, 0, 0, window_width, window_height,
+                         band_data, window_width, window_height, GDT_Byte, 0, 0) != CE_None) {
             error("Failed to write destination band %d", i);
             free(band_data);
             GDALClose(dst);
@@ -158,14 +288,14 @@ static int apply_mask(GDALDatasetH src, const Mask *mask, GDALDatasetH *out) {
     GDALSetRasterColorInterpretation(alpha_band, GCI_AlphaBand);
 
     /* Initialize alpha to 0 (transparent outside mask) */
-    unsigned char *alpha_data = calloc(width * height, 1);
+    unsigned char *alpha_data = calloc(window_width * window_height, 1);
     if (!alpha_data) {
         error("Failed to allocate alpha buffer");
         GDALClose(dst);
         return -1;
     }
-    if (GDALRasterIO(alpha_band, GF_Write, 0, 0, width, height,
-                     alpha_data, width, height, GDT_Byte, 0, 0) != CE_None) {
+    if (GDALRasterIO(alpha_band, GF_Write, 0, 0, window_width, window_height,
+                     alpha_data, window_width, window_height, GDT_Byte, 0, 0) != CE_None) {
         error("Failed to write alpha band");
         free(alpha_data);
         GDALClose(dst);
@@ -173,19 +303,26 @@ static int apply_mask(GDALDatasetH src, const Mask *mask, GDALDatasetH *out) {
     }
     free(alpha_data);
 
-    /* Copy geotransform and projection */
+    /* Compute adjusted geotransform for the window */
     double gt[6];
     if (GDALGetGeoTransform(src, gt) == CE_None) {
-        GDALSetGeoTransform(dst, gt);
+        /* Adjust origin to window corner */
+        double new_gt[6];
+        new_gt[0] = gt[0] + min_x * gt[1] + min_y * gt[2];  /* new X origin */
+        new_gt[1] = gt[1];  /* pixel width unchanged */
+        new_gt[2] = gt[2];  /* rotation unchanged */
+        new_gt[3] = gt[3] + min_x * gt[4] + min_y * gt[5];  /* new Y origin */
+        new_gt[4] = gt[4];  /* rotation unchanged */
+        new_gt[5] = gt[5];  /* pixel height unchanged */
+        GDALSetGeoTransform(dst, new_gt);
     }
     const char *proj = GDALGetProjectionRef(src);
     if (proj && proj[0]) {
         GDALSetProjection(dst, proj);
     }
 
-    /* Create OGR polygon geometry from mask.
-     * Mask polygons are in pixel coordinates.
-     * First ring is outer boundary (CCW), subsequent rings are holes (CW).
+    /* Create OGR polygon geometry from mask, adjusted for window offset.
+     * Mask polygons are in pixel coordinates relative to original image.
      */
     OGRGeometryH polygon = OGR_G_CreateGeometry(wkbPolygon);
     if (!polygon) {
@@ -199,19 +336,26 @@ static int apply_mask(GDALDatasetH src, const Mask *mask, GDALDatasetH *out) {
         const Ring *mask_ring = &mask->rings[r];
 
         for (int v = 0; v < mask_ring->count; v++) {
-            OGR_G_AddPoint_2D(ring, mask_ring->vertices[v].x, mask_ring->vertices[v].y);
+            /* Translate coordinates to window-relative.
+             * Mask coords are in original image space. We need to subtract:
+             * - win_offset: offset from prior windowing (e.g., expand_to_rgb)
+             * - min_x/min_y: offset from current window extraction */
+            double x = mask_ring->vertices[v].x - win_offset_x - min_x;
+            double y = mask_ring->vertices[v].y - win_offset_y - min_y;
+            OGR_G_AddPoint_2D(ring, x, y);
         }
 
         OGR_G_AddGeometryDirectly(polygon, ring);
     }
 
     /* Use GDALRasterizeGeometries to burn the mask into the alpha band.
-     * We set a pixel-space geotransform for the rasterization since
-     * the mask coordinates are in pixel space.
+     * Use pixel-space geotransform for rasterization.
      */
     double pixel_gt[6] = { 0, 1, 0, 0, 0, 1 };  /* Identity: pixel coords = geo coords */
 
     /* Temporarily set pixel-space geotransform for rasterization */
+    double saved_gt[6];
+    GDALGetGeoTransform(dst, saved_gt);
     GDALSetGeoTransform(dst, pixel_gt);
 
     int band_list[1] = { alpha_band_num };
@@ -232,10 +376,8 @@ static int apply_mask(GDALDatasetH src, const Mask *mask, GDALDatasetH *out) {
         NULL            /* pProgressArg */
     );
 
-    /* Restore original geotransform */
-    if (GDALGetGeoTransform(src, gt) == CE_None) {
-        GDALSetGeoTransform(dst, gt);
-    }
+    /* Restore saved geotransform */
+    GDALSetGeoTransform(dst, saved_gt);
 
     OGR_G_DestroyGeometry(polygon);
 
@@ -769,8 +911,6 @@ static int process_dataset(const char *zippath,
                            int num_threads,
                            int epsg,
                            const char *resampling) {
-    info("  Opening %s from ZIP...", dataset->name);
-
     /* Build vsizip path: /vsizip/zippath/name.zip/input_file */
     char vsi_path[PATH_SIZE];
     snprintf(vsi_path, sizeof(vsi_path), "/vsizip/%s/%s.zip/%s",
@@ -783,48 +923,36 @@ static int process_dataset(const char *zippath,
         return -1;
     }
 
-    info("    %s Opened: %dx%d, %d bands", dataset->name,
-         GDALGetRasterXSize(src), GDALGetRasterYSize(src), GDALGetRasterCount(src));
-
     GDALDatasetH tmp;
+    int win_offset_x = 0, win_offset_y = 0;
 
-    /* Step 1: RGB expansion if needed */
-    info("  %s Ensuring bands are rgb", dataset->name);
-    if (expand_to_rgb(src, &tmp) != 0) {
+    /* Step 1: RGB expansion if needed (also extracts mask window if paletted) */
+    if (expand_to_rgb(src, dataset->mask, &tmp, &win_offset_x, &win_offset_y) != 0) {
         GDALClose(src);
         return -1;
     }
     if (tmp) {
         GDALClose(src);
-        info("    %s Expanded to rgb bands", dataset->name);
         src = tmp;
     }
 
     /* Step 2: Apply pixel-space mask */
-    if (dataset->mask && dataset->mask->count > 0) {
-        info("  %s Applying pixel mask (%d rings)...", dataset->name, dataset->mask->count);
-    }
-    if (apply_mask(src, dataset->mask, &tmp) != 0) {
+    if (apply_mask(src, dataset->mask, win_offset_x, win_offset_y, &tmp) != 0) {
         GDALClose(src);
         return -1;
     }
     if (tmp) {
         GDALClose(src);
-        info("    %s Applied pixel mask (%d rings)...", dataset->name, dataset->mask->count);
         src = tmp;
     }
 
     /* Step 3: Apply GCPs if present */
-    if (dataset->gcps && dataset->gcps->count > 0) {
-        info("  %s Applying %d GCPs...", dataset->name, dataset->gcps->count);
-    }
     if (apply_gcps(src, dataset->gcps, &tmp) != 0) {
         GDALClose(src);
         return -1;
     }
     if (tmp) {
         GDALClose(src);
-        info("    %s Applied %d GCPs...", dataset->name, dataset->gcps->count);
         src = tmp;
     }
 
@@ -840,34 +968,26 @@ static int process_dataset(const char *zippath,
     double adjusted_resolution = resolution / cos(center_lat);
 
     /* Step 4: Warp to target EPSG */
-    info("  %s Warping to EPSG:%d at %.2f m/pixel...", dataset->name, epsg, adjusted_resolution);
     if (warp_to_target(src, adjusted_resolution, num_threads, epsg, resampling, &tmp) != 0) {
         GDALClose(src);
         return -1;
     }
     GDALClose(src);
-    info("    %s Warped to EPSG:%d at %.2f m/pixel...", dataset->name, epsg, adjusted_resolution);
     src = tmp;
 
     /* Step 5: Clip to geographic bounds */
-    if (dataset->geobound) {
-        info("  %s Clipping to geographic bounds...", dataset->name);
-    }
     if (clip_to_bounds(src, dataset->geobound, &tmp) != 0) {
         GDALClose(src);
         return -1;
     }
     if (tmp) {
         GDALClose(src);
-        info("    %s Clipped to geographic bounds...", dataset->name);
         src = tmp;
     }
 
     /* Step 6: Save to output file */
-    info("  %s Saving to %s...", dataset->name, outpath);
     int result = save_to_file(src, outpath);
     GDALClose(src);
-    info("    %s Saved to %s", dataset->name, outpath);
 
     return result;
 }
@@ -1023,6 +1143,17 @@ int process_datasets_parallel(
     /* Sort jobs by estimated work (largest first) to reduce straggler effect */
     qsort(jobs, actual_job_count, sizeof(DatasetJob), compare_jobs_by_work);
 
+    /* Build job names array for progress display (must be after sorting) */
+    const char **job_names = malloc(actual_job_count * sizeof(char *));
+    if (!job_names) {
+        error("Failed to allocate job names array");
+        free(jobs);
+        return -1;
+    }
+    for (int i = 0; i < actual_job_count; i++) {
+        job_names[i] = jobs[i].dataset->name;
+    }
+
     info("\nProcessing %d datasets with %d parallel workers...",
          actual_job_count, num_workers);
 
@@ -1034,6 +1165,7 @@ int process_datasets_parallel(
         .job_func = dataset_job_func,
         .worker_init = dataset_worker_init,
         .init_data = NULL,
+        .job_names = job_names,
     };
 
     JobQueueResult jq_result;
@@ -1042,6 +1174,7 @@ int process_datasets_parallel(
     info("\nDataset processing complete: %d succeeded, %d failed",
          jq_result.completed, jq_result.failed);
 
+    free(job_names);
     free(jobs);
 
     return queue_result;
