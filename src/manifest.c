@@ -180,13 +180,16 @@ TileManifest *build_tile_manifest(const Tileset *tileset, const char *tmppath) {
         if (ds_max_zoom > m->max_zoom) ds_max_zoom = m->max_zoom;
         if (ds_max_zoom < m->min_zoom) ds_max_zoom = m->min_zoom;
 
-        /* Add tiles ONLY at dataset's max_lod - this is where base tiles
-         * will be generated from the VRT. Overview tiles at lower zooms
-         * will be built by combining child tiles. */
-        ZoomTileSet *zts = &m->zooms[ds_max_zoom - m->min_zoom];
-        if (add_tiles_for_bounds(zts, lon_min, lat_min, lon_max, lat_max, ds_max_zoom) < 0) {
-            free_tile_manifest(m);
-            return NULL;
+        /* Add tiles at EVERY zoom level from min_zoom to dataset's max_lod.
+         * At each zoom level Z, tiles are generated from a zoom-specific VRT
+         * containing datasets where max_lod >= Z. This dataset qualifies for
+         * all zoom levels from min_zoom to its max_lod. */
+        for (int z = m->min_zoom; z <= ds_max_zoom; z++) {
+            ZoomTileSet *zts = &m->zooms[z - m->min_zoom];
+            if (add_tiles_for_bounds(zts, lon_min, lat_min, lon_max, lat_max, z) < 0) {
+                free_tile_manifest(m);
+                return NULL;
+            }
         }
     }
 

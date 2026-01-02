@@ -53,6 +53,7 @@ static void print_usage(const char *prog) {
     printf("  -s, --tilesets <names>  Comma-separated tileset names (default: all)\n");
     printf("  -l, --list           List available tilesets and exit\n");
     printf("  -C, --cleanup        Remove temp directory after processing\n");
+    printf("  -T, --tile-only      Skip processing, reuse existing reprojected files\n");
     printf("  -e, --epsg <code>    Target EPSG code (default: 3857)\n");
     printf("  --reproject-resampling <method>  Resampling for reprojection (default: bilinear)\n");
     printf("  --tile-resampling <method>       Resampling for tile generation (default: bilinear)\n");
@@ -167,6 +168,7 @@ int main(int argc, char *argv[]) {
         .epsg = 3857,
         .quiet = false,
         .cleanup = false,
+        .tile_only = false,
     };
     const char *config_path = "aeronav.conf.json";
     bool do_list = false;
@@ -184,6 +186,7 @@ int main(int argc, char *argv[]) {
         {"reproject-resampling", required_argument, 0, 'R'},
         {"tile-resampling",     required_argument, 0, 'S'},
         {"cleanup",             no_argument,       0, 'C'},
+        {"tile-only",           no_argument,       0, 'T'},
         {"quiet",               no_argument,       0, 'q'},
         {"list",                no_argument,       0, 'l'},
         {"help",                no_argument,       0, 'h'},
@@ -191,7 +194,7 @@ int main(int argc, char *argv[]) {
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "c:z:t:o:s:f:j:w:e:R:S:Cqlh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "c:z:t:o:s:f:j:w:e:R:S:CTqlh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'o':
                 opts.outpath = optarg;
@@ -239,6 +242,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'C':
                 opts.cleanup = true;
+                break;
+            case 'T':
+                opts.tile_only = true;
                 break;
             case 'q':
                 opts.quiet = true;
@@ -329,7 +335,7 @@ int main(int argc, char *argv[]) {
     info("Processing %d tileset(s) with %d total dataset(s)...",
          valid_tileset_count, total_datasets);
 
-    if (opts.zippath) {
+    if (opts.zippath && !opts.tile_only) {
         if (process_datasets_parallel(
                 tilesets,
                 valid_tileset_count,
@@ -344,7 +350,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* Build VRTs for all tilesets */
-    if (opts.zippath || opts.outpath) {
+    if (opts.zippath || opts.outpath || opts.tile_only) {
         build_tilesets_vrt(tilesets, valid_tileset_count, opts.tmppath);
     }
 

@@ -107,6 +107,7 @@ typedef struct {
     int epsg;                   /* Target EPSG code (default 3857) */
     bool quiet;                 /* Suppress output */
     bool cleanup;               /* Remove tmppath after processing */
+    bool tile_only;             /* Skip processing, use existing reprojected files */
 } Options;
 
 /* ============================================================================
@@ -164,6 +165,24 @@ int build_tilesets_vrt(
     const Tileset **tilesets,
     int tileset_count,
     const char *tmppath
+);
+
+/*
+ * Build a zoom-specific VRT for a tileset.
+ *
+ * Includes only datasets where max_lod >= zoom, ordered by max_lod
+ * descending so that smaller max_lod datasets (more appropriate for
+ * this zoom level) appear last and render on top.
+ *
+ * vrt_path_out must be at least PATH_SIZE bytes.
+ *
+ * Returns 0 on success, -1 on error or if no datasets qualify.
+ */
+int build_zoom_vrt(
+    const Tileset *tileset,
+    int zoom,
+    const char *tmppath,
+    char *vrt_path_out
 );
 
 /* ============================================================================

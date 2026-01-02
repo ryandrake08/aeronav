@@ -1,10 +1,11 @@
 """
-Tile manifest computation for Strategy 3 tile generation.
+Tile manifest computation for zoom-specific VRT tile generation.
 
 Computes which tiles should be generated for a tileset based on
-dataset coverage and max_lod constraints. Each dataset only contributes
-tiles up to its max_lod - at higher zoom levels, datasets with insufficient
-resolution are excluded.
+dataset coverage and max_lod constraints. At each zoom level Z, tiles
+are generated from all datasets where max_lod >= Z. Datasets with
+smaller max_lod values are preferred (rendered on top in VRT) as they
+provide more appropriate resolution for that zoom level.
 """
 
 import math
@@ -91,9 +92,8 @@ def bounds_from_reprojected_tif(filepath):
 
 def get_reprojected_tif_path(tmppath, dataset_name):
     """Get the path to a reprojected TIF file for a dataset."""
-    # Reprojected files use underscores instead of spaces
-    safe_name = dataset_name.replace(' ', '_')
-    return os.path.join(tmppath, f'_{safe_name}.tif')
+    # Reprojected files keep original names with underscore prefix
+    return os.path.join(tmppath, f'_{dataset_name}.tif')
 
 
 def get_tileset_zoom_range(tileset_def: dict, datasets: dict) -> tuple[int, int]:
@@ -121,14 +121,15 @@ def compute_tile_manifest(
     zoom_max: int
 ) -> dict[int, set[tuple[int, int]]]:
     """
-    Compute the set of base tiles to generate for a tileset.
+    Compute the set of tiles to generate for a tileset.
 
-    For each dataset in the tileset:
-      - Get bounds from reprojected TIF at tmppath
-      - Add tiles at the dataset's max_lod level only
+    For each zoom level Z from zoom_min to zoom_max:
+      - Include tiles from all datasets where max_lod >= Z
+      - This ensures each zoom level uses the most appropriate data sources
 
-    Base tiles are generated from the VRT at each dataset's max_lod.
-    Overview tiles at lower zooms are built by combining child tiles.
+    At each zoom level, a zoom-specific VRT is used with datasets ordered
+    so that smaller max_lod values (more appropriate for that zoom) are
+    rendered on top.
 
     Args:
         tileset_def: Tileset definition with 'datasets' list
@@ -138,34 +139,64 @@ def compute_tile_manifest(
         zoom_max: Maximum zoom level for the tileset
 
     Returns:
-        Dict mapping zoom level -> set of (x, y) base tile coordinates in XYZ scheme
+        Dict mapping zoom level -> set of (x, y) tile coordinates in XYZ scheme
     """
     manifest = {z: set() for z in range(zoom_min, zoom_max + 1)}
 
+    # Collect bounds for each dataset once
+    dataset_bounds = {}
     for dataset_name in tileset_def['datasets']:
         if dataset_name not in datasets:
             continue
 
-        dataset_def = datasets[dataset_name]
-        max_lod = dataset_def.get('max_lod', zoom_max)
-
-        # Get bounds from reprojected TIF
         tif_path = get_reprojected_tif_path(tmppath, dataset_name)
         bounds = bounds_from_reprojected_tif(tif_path)
 
-        if bounds is None:
-            # Fall back: skip this dataset (will show warning in caller)
-            continue
+        if bounds is not None:
+            max_lod = datasets[dataset_name].get('max_lod', zoom_max)
+            dataset_bounds[dataset_name] = (bounds, max_lod)
 
-        lon_min, lat_min, lon_max, lat_max = bounds
-
-        # Add tiles ONLY at this dataset's max_lod level.
-        # Base tiles are generated from the VRT at max_lod.
-        # Overview tiles at lower zooms are built by combining child tiles.
-        effective_max_lod = min(zoom_max, max(zoom_min, max_lod))
-        add_tiles_to_set(manifest[effective_max_lod], lon_min, lat_min, lon_max, lat_max, effective_max_lod)
+    # For each zoom level, add tiles from all datasets where max_lod >= zoom
+    for z in range(zoom_min, zoom_max + 1):
+        for dataset_name, (bounds, max_lod) in dataset_bounds.items():
+            if max_lod >= z:
+                lon_min, lat_min, lon_max, lat_max = bounds
+                add_tiles_to_set(manifest[z], lon_min, lat_min, lon_max, lat_max, z)
 
     return manifest
+
+
+def get_datasets_for_zoom(
+    tileset_def: dict,
+    datasets: dict,
+    zoom: int
+) -> list[str]:
+    """
+    Get list of dataset names appropriate for a specific zoom level.
+
+    Returns datasets where max_lod >= zoom, ordered by max_lod DESCENDING
+    (so that smaller max_lod datasets appear last and render on top in VRT).
+
+    Args:
+        tileset_def: Tileset definition with 'datasets' list
+        datasets: Dict of dataset definitions with 'max_lod' values
+        zoom: The zoom level to get datasets for
+
+    Returns:
+        List of dataset names ordered for VRT stacking (highest max_lod first)
+    """
+    eligible = []
+    for dataset_name in tileset_def['datasets']:
+        if dataset_name not in datasets:
+            continue
+        max_lod = datasets[dataset_name].get('max_lod', 15)
+        if max_lod >= zoom:
+            eligible.append((dataset_name, max_lod))
+
+    # Sort by max_lod descending (highest first = bottom of VRT stack)
+    eligible.sort(key=lambda x: x[1], reverse=True)
+
+    return [name for name, _ in eligible]
 
 
 def manifest_tile_count(manifest: dict[int, set[tuple[int, int]]]) -> int:

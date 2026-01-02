@@ -302,50 +302,40 @@ class TileGenerator:
 
         return tminx, tminy, tmaxx, tmaxy
 
-    def _should_generate_tile(self, tx: int, ty: int, zoom: int) -> bool:
-        """
-        Check if a tile should be generated based on the manifest.
-
-        Args:
-            tx: Tile X coordinate (TMS scheme)
-            ty: Tile Y coordinate (TMS scheme)
-            zoom: Zoom level
-
-        Returns:
-            True if tile should be generated
-        """
-        if self.tile_manifest is None:
-            return True
-
-        # Convert TMS Y to XYZ Y for manifest lookup
-        xyz_y = (2 ** zoom - 1) - ty
-        return (tx, xyz_y) in self.tile_manifest.get(zoom, set())
-
     def generate_base_tiles(self) -> None:
         """Generate base tiles at each zoom level in the manifest from the source raster."""
         if not self.quiet:
             print(f"Generating base tiles (zoom {self.min_zoom} to {self.max_zoom})...")
 
         with rasterio.open(self.input_path) as src:
-            # Collect tiles from all zoom levels with manifest entries
+            # Collect tiles directly from manifest (efficient) or from raster bounds (fallback)
             tile_coords = []
-            for zoom in range(self.min_zoom, self.max_zoom + 1):
-                # Get tile range at this zoom
-                tminx, tminy, tmaxx, tmaxy = self._get_tile_range(src, zoom)
-
-                # Build list of tiles to generate, filtered by manifest
+            if self.tile_manifest is not None:
+                # Iterate directly through manifest - O(n) where n is manifest size
+                for zoom in range(self.min_zoom, self.max_zoom + 1):
+                    manifest_tiles = self.tile_manifest.get(zoom, set())
+                    for x, y in manifest_tiles:
+                        # Manifest uses XYZ coordinates, convert to TMS for internal use
+                        tms_y = (2 ** zoom - 1) - y
+                        tile_coords.append((x, tms_y, zoom))
+            else:
+                # No manifest - generate all tiles in raster bounds at max_zoom only
+                tminx, tminy, tmaxx, tmaxy = self._get_tile_range(src, self.max_zoom)
                 for ty in range(tmaxy, tminy - 1, -1):
                     for tx in range(tminx, tmaxx + 1):
-                        if self._should_generate_tile(tx, ty, zoom):
-                            tile_coords.append((tx, ty, zoom))
+                        tile_coords.append((tx, ty, self.max_zoom))
 
             if not self.quiet:
                 print(f"  {len(tile_coords)} base tiles to generate")
 
             # Create directories upfront for tiles we're generating
+            dirs_created = set()
             for tx, ty, zoom in tile_coords:
-                tile_dir = os.path.join(self.output_path, str(zoom), str(tx))
-                os.makedirs(tile_dir, exist_ok=True)
+                dir_key = (zoom, tx)
+                if dir_key not in dirs_created:
+                    tile_dir = os.path.join(self.output_path, str(zoom), str(tx))
+                    os.makedirs(tile_dir, exist_ok=True)
+                    dirs_created.add(dir_key)
 
             # Generate each tile
             tiles_done = 0
@@ -398,153 +388,6 @@ class TileGenerator:
         # Write tile
         self._write_tile(tile_path, data, src.profile)
 
-    def generate_overview_tiles(self) -> None:
-        """Generate overview tiles by combining child tiles."""
-        for zoom in range(self.max_zoom - 1, self.min_zoom - 1, -1):
-            if not self.quiet:
-                print(f"Generating overview tiles at zoom {zoom}...")
-
-            # Calculate tile range at this zoom from child tiles
-            child_zoom = zoom + 1
-
-            # Find which tiles we need by looking at existing child tiles
-            child_dir = os.path.join(self.output_path, str(child_zoom))
-            if not os.path.exists(child_dir):
-                continue
-
-            # Get unique parent tiles from child tile coordinates
-            parent_tiles = set()
-            for tx_str in os.listdir(child_dir):
-                tx_path = os.path.join(child_dir, tx_str)
-                if not os.path.isdir(tx_path):
-                    continue
-                try:
-                    child_tx = int(tx_str)
-                except ValueError:
-                    continue
-
-                for ty_file in os.listdir(tx_path):
-                    if not ty_file.endswith(self.tile_ext):
-                        continue
-                    try:
-                        # Convert XYZ Y back to TMS Y for child
-                        xyz_y = int(ty_file[:ty_file.rfind('.')])
-                        child_ty = (2 ** child_zoom - 1) - xyz_y
-
-                        # Calculate parent tile coords
-                        parent_tx = child_tx // 2
-                        parent_ty = child_ty // 2
-                        parent_tiles.add((parent_tx, parent_ty))
-                    except ValueError:
-                        continue
-
-            tiles_done = 0
-            for tx, ty in sorted(parent_tiles):
-                self._create_overview_tile(tx, ty, zoom)
-                tiles_done += 1
-
-            if not self.quiet:
-                print(f"  Completed {tiles_done} overview tiles")
-
-    def _create_overview_tile(self, tx: int, ty: int, zoom: int) -> None:
-        """
-        Create an overview tile by combining 4 child tiles.
-
-        Args:
-            tx: Tile X coordinate (TMS scheme)
-            ty: Tile Y coordinate (TMS scheme)
-            zoom: Zoom level
-        """
-        tile_path = self._tile_path(tx, ty, zoom)
-
-        # Always skip if tile already exists.
-        # Base tiles at various zoom levels may have been generated from the VRT
-        # (for datasets with different max_lod). We don't want overview generation
-        # to overwrite those with downsampled versions.
-        if os.path.exists(tile_path):
-            return
-
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(tile_path), exist_ok=True)
-
-        # Child tile coordinates at zoom+1
-        child_zoom = zoom + 1
-        # In TMS, children are at (2*tx, 2*ty), (2*tx+1, 2*ty), (2*tx, 2*ty+1), (2*tx+1, 2*ty+1)
-        child_tiles = [
-            (tx * 2,     ty * 2),      # bottom-left
-            (tx * 2 + 1, ty * 2),      # bottom-right
-            (tx * 2,     ty * 2 + 1),  # top-left
-            (tx * 2 + 1, ty * 2 + 1),  # top-right
-        ]
-
-        # Quadrant positions in the 2x composite image
-        # (qx, qy) where qx is column (0=left, 1=right), qy is row (0=top, 1=bottom)
-        # In image coordinates, Y increases downward, but in TMS, Y increases upward
-        quadrant_positions = [
-            (0, 1),  # bottom-left child -> left column, bottom row
-            (1, 1),  # bottom-right child -> right column, bottom row
-            (0, 0),  # top-left child -> left column, top row
-            (1, 0),  # top-right child -> right column, top row
-        ]
-
-        # Create 2*tile_size composite image (RGBA)
-        composite = np.zeros((4, self.tile_size * 2, self.tile_size * 2), dtype=np.uint8)
-
-        # Load each child tile into its quadrant
-        has_any_tile = False
-        for (cx, cy), (qx, qy) in zip(child_tiles, quadrant_positions):
-            child_path = self._tile_path(cx, cy, child_zoom)
-            if os.path.exists(child_path):
-                has_any_tile = True
-                with rasterio.open(child_path) as child:
-                    child_data = child.read()
-                    # Ensure child data has 4 bands
-                    if child_data.shape[0] < 4:
-                        # Expand to RGBA
-                        expanded = np.zeros((4, self.tile_size, self.tile_size), dtype=np.uint8)
-                        expanded[:child_data.shape[0]] = child_data
-                        if child_data.shape[0] == 3:
-                            # RGB -> add full opacity alpha
-                            expanded[3] = 255
-                        child_data = expanded
-
-                    x_off = qx * self.tile_size
-                    y_off = qy * self.tile_size
-                    composite[:, y_off:y_off+self.tile_size, x_off:x_off+self.tile_size] = child_data
-
-        # Skip if no child tiles exist
-        if not has_any_tile:
-            return
-
-        # Resample composite down to tile_size using PIL for proper resampling
-        from PIL import Image
-
-        # Convert to PIL Image (need to transpose for PIL's format)
-        # PIL expects (height, width, channels) or separate mode
-        rgba = np.transpose(composite, (1, 2, 0))  # (H, W, C)
-        img = Image.fromarray(rgba, mode='RGBA')
-
-        # Resize with appropriate resampling
-        pil_resampling = {
-            Resampling.nearest: Image.Resampling.NEAREST,
-            Resampling.bilinear: Image.Resampling.BILINEAR,
-            Resampling.cubic: Image.Resampling.BICUBIC,
-            Resampling.lanczos: Image.Resampling.LANCZOS,
-        }.get(self.resampling, Image.Resampling.BILINEAR)
-
-        img_resized = img.resize((self.tile_size, self.tile_size), pil_resampling)
-
-        # Convert back to numpy
-        resampled = np.array(img_resized)
-        resampled = np.transpose(resampled, (2, 0, 1))  # (C, H, W)
-
-        # Check if tile is transparent - skip if fully transparent
-        if self._is_transparent(resampled):
-            return
-
-        # Write tile
-        self._write_tile(tile_path, resampled, {})
-
     def generate_tiles_parallel(self, num_processes: int) -> None:
         """
         Generate tiles using multiple worker processes.
@@ -559,15 +402,22 @@ class TileGenerator:
             print(f"Generating base tiles (zoom {self.min_zoom} to {self.max_zoom}) with {num_processes} workers...")
 
         with rasterio.open(self.input_path) as src:
-            # Collect tiles from all zoom levels with manifest entries
+            # Collect tiles directly from manifest (efficient) or from raster bounds (fallback)
             tile_coords = []
-            for zoom in range(self.min_zoom, self.max_zoom + 1):
-                tminx, tminy, tmaxx, tmaxy = self._get_tile_range(src, zoom)
-
+            if self.tile_manifest is not None:
+                # Iterate directly through manifest - O(n) where n is manifest size
+                for zoom in range(self.min_zoom, self.max_zoom + 1):
+                    manifest_tiles = self.tile_manifest.get(zoom, set())
+                    for x, y in manifest_tiles:
+                        # Manifest uses XYZ coordinates, convert to TMS for internal use
+                        tms_y = (2 ** zoom - 1) - y
+                        tile_coords.append((x, tms_y, zoom))
+            else:
+                # No manifest - generate all tiles in raster bounds at max_zoom only
+                tminx, tminy, tmaxx, tmaxy = self._get_tile_range(src, self.max_zoom)
                 for ty in range(tmaxy, tminy - 1, -1):
                     for tx in range(tminx, tmaxx + 1):
-                        if self._should_generate_tile(tx, ty, zoom):
-                            tile_coords.append((tx, ty, zoom))
+                        tile_coords.append((tx, ty, self.max_zoom))
 
             if not self.quiet:
                 print(f"  {len(tile_coords)} base tiles to generate")
@@ -605,9 +455,6 @@ class TileGenerator:
 
         if not self.quiet:
             print(f"  Completed {len(tile_coords)} base tiles")
-
-        # Generate overview tiles (sequential, as they depend on base tiles)
-        self.generate_overview_tiles()
 
 
 def _create_tile_worker(
@@ -720,4 +567,153 @@ def generate_tiles(
         generator.generate_tiles_parallel(num_processes)
     else:
         generator.generate_base_tiles()
-        generator.generate_overview_tiles()
+
+
+def _create_tile_worker_multi_vrt(
+    args: Tuple[int, int, int, str],
+    output_path: str,
+    resampling: Resampling,
+    tile_size: int,
+    tile_format: str,
+    tile_ext: str,
+) -> None:
+    """
+    Worker function for parallel tile generation with zoom-specific VRTs.
+
+    Args:
+        args: Tuple of (zoom, tx, ty, vrt_path) where tx/ty are in TMS coordinates
+        output_path: Directory for output tiles
+        resampling: Resampling method
+        tile_size: Size of output tiles
+        tile_format: Output format driver (PNG, JPEG, or WEBP)
+        tile_ext: File extension (.png, .jpg, or .webp)
+    """
+    zoom, tx, ty, vrt_path = args
+    mercator = GlobalMercator(tile_size)
+
+    # Calculate tile path (convert TMS to XYZ)
+    xyz_y = (2 ** zoom - 1) - ty
+    tile_path = os.path.join(output_path, str(zoom), str(tx), f"{xyz_y}{tile_ext}")
+
+    # Skip if tile already exists
+    if os.path.exists(tile_path):
+        return
+
+    # Get tile bounds
+    minx, miny, maxx, maxy = mercator.tile_bounds(tx, ty, zoom)
+
+    # Read and resample from zoom-specific VRT
+    with rasterio.open(vrt_path) as src:
+        window = from_bounds(minx, miny, maxx, maxy, src.transform)
+
+        data = src.read(
+            window=window,
+            out_shape=(src.count, tile_size, tile_size),
+            resampling=resampling,
+            boundless=True,
+            fill_value=0,
+        )
+
+    # Check for transparent tiles
+    if data.shape[0] == 4:
+        if np.all(data[3] == 0):
+            return
+    elif data.shape[0] == 2:
+        if np.all(data[1] == 0):
+            return
+    elif np.all(data == 0):
+        return
+
+    # Write tile
+    out_profile = {
+        'driver': tile_format,
+        'dtype': data.dtype,
+        'width': tile_size,
+        'height': tile_size,
+        'count': data.shape[0],
+    }
+
+    with rasterio.open(tile_path, 'w', **out_profile) as dst:
+        dst.write(data)
+
+
+def generate_tiles_multi_zoom(
+    vrt_paths: dict[int, str],
+    output_path: str,
+    tile_manifest: dict[int, set[Tuple[int, int]]],
+    resampling: str = 'bilinear',
+    tile_format: str = 'WEBP',
+    num_processes: int = 1,
+    quiet: bool = False,
+) -> None:
+    """
+    Generate XYZ tiles from zoom-specific VRTs in a single parallel phase.
+
+    This is more efficient than calling generate_tiles() for each zoom level
+    because it uses a single process pool for all tiles across all zoom levels.
+
+    Args:
+        vrt_paths: Dict mapping zoom level -> path to zoom-specific VRT
+        output_path: Directory for output tiles
+        tile_manifest: Dict mapping zoom level -> set of (x, y) XYZ tile coordinates
+        resampling: Resampling method name (nearest, bilinear, cubic, etc.)
+        tile_format: Output tile format (PNG, JPEG, or WEBP)
+        num_processes: Number of parallel workers
+        quiet: Suppress progress output
+    """
+    from concurrent.futures import ProcessPoolExecutor
+    from functools import partial
+
+    tile_size = 256
+    tile_ext = {'WEBP': '.webp', 'JPEG': '.jpg', 'PNG': '.png'}.get(tile_format.upper(), '.png')
+    resampling_enum = get_resampling(resampling)
+
+    # Collect all tiles from all zoom levels into a single list
+    # Each item is (zoom, tx, ty, vrt_path) where tx/ty are TMS coordinates
+    all_tiles = []
+    for zoom, tiles in sorted(tile_manifest.items()):
+        if zoom not in vrt_paths:
+            continue
+        vrt_path = vrt_paths[zoom]
+        for x, y in tiles:
+            # Convert XYZ y to TMS y
+            tms_y = (2 ** zoom - 1) - y
+            all_tiles.append((zoom, x, tms_y, vrt_path))
+
+    if not all_tiles:
+        if not quiet:
+            print("No tiles to generate")
+        return
+
+    if not quiet:
+        print(f"Generating {len(all_tiles)} tiles across {len(vrt_paths)} zoom levels with {num_processes} workers...")
+
+    # Create directories upfront
+    dirs_created = set()
+    for zoom, tx, ty, _ in all_tiles:
+        dir_key = (zoom, tx)
+        if dir_key not in dirs_created:
+            tile_dir = os.path.join(output_path, str(zoom), str(tx))
+            os.makedirs(tile_dir, exist_ok=True)
+            dirs_created.add(dir_key)
+
+    # Create worker function with fixed parameters
+    worker = partial(
+        _create_tile_worker_multi_vrt,
+        output_path=output_path,
+        resampling=resampling_enum,
+        tile_size=tile_size,
+        tile_format=tile_format.upper(),
+        tile_ext=tile_ext,
+    )
+
+    # Process tiles in parallel
+    with ProcessPoolExecutor(max_workers=num_processes) as executor:
+        tiles_done = 0
+        for _ in executor.map(worker, all_tiles, chunksize=32):
+            tiles_done += 1
+            if not quiet and tiles_done % 500 == 0:
+                print(f"  {tiles_done}/{len(all_tiles)} tiles")
+
+    if not quiet:
+        print(f"  Completed {len(all_tiles)} tiles")

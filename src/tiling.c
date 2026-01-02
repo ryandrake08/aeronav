@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <stdatomic.h>
 #include <gdal.h>
+#include <cpl_conv.h>
 
 #include "aeronav.h"
 #include "manifest.h"
@@ -294,447 +295,11 @@ static int generate_base_tile(GDALDatasetH ds,
 }
 
 /* ============================================================================
- * Overview Tile Generation (from child tiles)
- * ============================================================================ */
-
-/*
- * Generate an overview tile by combining 4 child tiles.
- *
- * Reads child tiles at zoom+1, composites them into a 2x image,
- * then downsamples to TILE_SIZE. This is much faster than reading
- * from the source raster for low zoom levels.
- *
- * Returns: 0 on success, 1 if skipped (no children), -1 on error.
- */
-static int generate_overview_tile(int z, int x, int y,
-                                   const char *outpath,
-                                   const char *tile_path,
-                                   const char *format,
-                                   GDALRIOResampleAlg resample_alg) {
-    char file_path[PATH_SIZE];
-    snprintf(file_path, sizeof(file_path), "%s/%s/%d/%d/%d.%s", outpath, tile_path, z, x, y, format);
-
-    /* Always skip if tile already exists.
-     * Base tiles at various zoom levels may have been generated from the VRT
-     * in Phase 1 (for datasets with different max_lod). We don't want overview
-     * generation to overwrite those with downsampled versions. */
-    struct stat st;
-    if (stat(file_path, &st) == 0) {
-        return 2;  /* Skipped - already exists */
-    }
-
-    /* Child tile coordinates at zoom+1 */
-    int child_zoom = z + 1;
-    /* In XYZ scheme: children are at (2*x, 2*y), (2*x+1, 2*y), (2*x, 2*y+1), (2*x+1, 2*y+1) */
-    int child_coords[4][2] = {
-        {x * 2,     y * 2},      /* top-left */
-        {x * 2 + 1, y * 2},      /* top-right */
-        {x * 2,     y * 2 + 1},  /* bottom-left */
-        {x * 2 + 1, y * 2 + 1},  /* bottom-right */
-    };
-
-    /* Quadrant positions in the 2x composite image
-     * (qx, qy) where qx is column (0=left, 1=right), qy is row (0=top, 1=bottom)
-     */
-    int quadrant_pos[4][2] = {
-        {0, 0},  /* top-left child -> left column, top row */
-        {1, 0},  /* top-right child -> right column, top row */
-        {0, 1},  /* bottom-left child -> left column, bottom row */
-        {1, 1},  /* bottom-right child -> right column, bottom row */
-    };
-
-    /* Allocate 2x composite image (RGBA) */
-    int composite_size = TILE_SIZE * 2;
-    unsigned char *composite = calloc(composite_size * composite_size * 4, 1);
-    if (!composite) {
-        error("Failed to allocate composite buffer");
-        return -1;
-    }
-
-    /* Load each child tile into its quadrant */
-    int has_any_tile = 0;
-    for (int i = 0; i < 4; i++) {
-        char child_path[PATH_SIZE];
-        snprintf(child_path, sizeof(child_path), "%s/%s/%d/%d/%d.%s",
-                 outpath, tile_path, child_zoom, child_coords[i][0], child_coords[i][1], format);
-
-        struct stat st;
-        if (stat(child_path, &st) != 0) {
-            continue;  /* Child tile doesn't exist */
-        }
-
-        GDALDatasetH child_ds = GDALOpen(child_path, GA_ReadOnly);
-        if (!child_ds) {
-            continue;  /* Could not open child tile */
-        }
-
-        has_any_tile = 1;
-
-        int child_bands = GDALGetRasterCount(child_ds);
-        int qx = quadrant_pos[i][0];
-        int qy = quadrant_pos[i][1];
-        int x_off = qx * TILE_SIZE;
-        int y_off = qy * TILE_SIZE;
-
-        /* Read each band and copy to composite */
-        unsigned char band_buf[TILE_SIZE * TILE_SIZE];
-        for (int b = 0; b < 4; b++) {
-            int src_band = (b < child_bands) ? b + 1 : 0;
-
-            if (src_band > 0) {
-                GDALRasterBandH band = GDALGetRasterBand(child_ds, src_band);
-                if (GDALRasterIO(band, GF_Read, 0, 0, TILE_SIZE, TILE_SIZE,
-                                 band_buf, TILE_SIZE, TILE_SIZE, GDT_Byte, 0, 0) == CE_None) {
-                    /* Copy to composite quadrant */
-                    for (int py = 0; py < TILE_SIZE; py++) {
-                        for (int px = 0; px < TILE_SIZE; px++) {
-                            int comp_idx = ((y_off + py) * composite_size + (x_off + px)) * 4 + b;
-                            composite[comp_idx] = band_buf[py * TILE_SIZE + px];
-                        }
-                    }
-                }
-            } else if (b == 3 && child_bands == 3) {
-                /* RGB source - set full opacity in alpha quadrant */
-                for (int py = 0; py < TILE_SIZE; py++) {
-                    for (int px = 0; px < TILE_SIZE; px++) {
-                        int comp_idx = ((y_off + py) * composite_size + (x_off + px)) * 4 + 3;
-                        composite[comp_idx] = 255;
-                    }
-                }
-            }
-        }
-
-        GDALClose(child_ds);
-    }
-
-    /* Skip if no child tiles exist */
-    if (!has_any_tile) {
-        free(composite);
-        return 1;
-    }
-
-    /* Create MEM dataset for the composite */
-    GDALDriverH mem_driver = GDALGetDriverByName("MEM");
-    GDALDatasetH composite_ds = GDALCreate(mem_driver, "", composite_size, composite_size, 4, GDT_Byte, NULL);
-    if (!composite_ds) {
-        error("Failed to create composite MEM dataset");
-        free(composite);
-        return -1;
-    }
-
-    /* Write composite data to MEM dataset */
-    unsigned char *band_data = malloc(composite_size * composite_size);
-    if (!band_data) {
-        error("Failed to allocate band buffer");
-        GDALClose(composite_ds);
-        free(composite);
-        return -1;
-    }
-
-    for (int b = 0; b < 4; b++) {
-        for (int i = 0; i < composite_size * composite_size; i++) {
-            band_data[i] = composite[i * 4 + b];
-        }
-        GDALRasterBandH band = GDALGetRasterBand(composite_ds, b + 1);
-        if (GDALRasterIO(band, GF_Write, 0, 0, composite_size, composite_size,
-                         band_data, composite_size, composite_size, GDT_Byte, 0, 0) != CE_None) {
-            error("Failed to write composite band %d", b + 1);
-            free(band_data);
-            GDALClose(composite_ds);
-            free(composite);
-            return -1;
-        }
-    }
-    free(band_data);
-    free(composite);
-
-    /* Create output tile by resampling composite down to TILE_SIZE */
-    GDALDatasetH tile_ds = GDALCreate(mem_driver, "", TILE_SIZE, TILE_SIZE, 4, GDT_Byte, NULL);
-    if (!tile_ds) {
-        error("Failed to create tile MEM dataset");
-        GDALClose(composite_ds);
-        return -1;
-    }
-
-    /* Read from composite with resampling */
-    unsigned char tile_buf[TILE_SIZE * TILE_SIZE];
-    GDALRasterIOExtraArg extra_arg;
-    INIT_RASTERIO_EXTRA_ARG(extra_arg);
-    extra_arg.eResampleAlg = resample_alg;
-
-    GDALColorInterp interp[] = { GCI_RedBand, GCI_GreenBand, GCI_BlueBand, GCI_AlphaBand };
-
-    for (int b = 0; b < 4; b++) {
-        GDALRasterBandH src_band = GDALGetRasterBand(composite_ds, b + 1);
-        if (GDALRasterIOEx(src_band, GF_Read, 0, 0, composite_size, composite_size,
-                           tile_buf, TILE_SIZE, TILE_SIZE, GDT_Byte, 0, 0, &extra_arg) != CE_None) {
-            error("Failed to resample composite band %d", b + 1);
-            GDALClose(tile_ds);
-            GDALClose(composite_ds);
-            return -1;
-        }
-
-        GDALRasterBandH dst_band = GDALGetRasterBand(tile_ds, b + 1);
-        if (GDALRasterIO(dst_band, GF_Write, 0, 0, TILE_SIZE, TILE_SIZE,
-                         tile_buf, TILE_SIZE, TILE_SIZE, GDT_Byte, 0, 0) != CE_None) {
-            error("Failed to write tile band %d", b + 1);
-            GDALClose(tile_ds);
-            GDALClose(composite_ds);
-            return -1;
-        }
-        GDALSetRasterColorInterpretation(dst_band, interp[b]);
-    }
-
-    GDALClose(composite_ds);
-
-    /* Check if tile is empty (all transparent) */
-    GDALRasterBandH alpha_band = GDALGetRasterBand(tile_ds, 4);
-    if (GDALRasterIO(alpha_band, GF_Read, 0, 0, TILE_SIZE, TILE_SIZE,
-                     tile_buf, TILE_SIZE, TILE_SIZE, GDT_Byte, 0, 0) != CE_None) {
-        error("Failed to read alpha band for empty check");
-        GDALClose(tile_ds);
-        return -1;
-    }
-
-    int is_empty = 1;
-    for (int i = 0; i < TILE_SIZE * TILE_SIZE; i++) {
-        if (tile_buf[i] != 0) {
-            is_empty = 0;
-            break;
-        }
-    }
-
-    if (is_empty) {
-        GDALClose(tile_ds);
-        return 1;  /* Skip empty tile */
-    }
-
-    /* Create output directory */
-    char dir_path[PATH_SIZE];
-    snprintf(dir_path, sizeof(dir_path), "%s/%s/%d/%d", outpath, tile_path, z, x);
-    if (mkdir_p(dir_path) != 0) {
-        error("Failed to create directory: %s", dir_path);
-        GDALClose(tile_ds);
-        return -1;
-    }
-
-    /* Write output file */
-    GDALDriverH out_driver = GDALGetDriverByName(format);
-    if (!out_driver) {
-        error("%s driver not available", format);
-        GDALClose(tile_ds);
-        return -1;
-    }
-
-    GDALDatasetH out_ds = GDALCreateCopy(out_driver, file_path, tile_ds, FALSE, NULL, NULL, NULL);
-    if (!out_ds) {
-        error("Failed to write overview tile: %s", file_path);
-        GDALClose(tile_ds);
-        return -1;
-    }
-
-    GDALClose(out_ds);
-    GDALClose(tile_ds);
-
-    return 0;
-}
-
-/* ============================================================================
  * Parallel Tile Generation
  * ============================================================================ */
 
-/*
- * Build a list of base tiles to generate from all zoom levels in the manifest.
- *
- * The manifest contains tiles at each dataset's max_lod level. Base tiles are
- * generated from the VRT at each of these zoom levels. Overview tiles at lower
- * zooms are then generated by combining child tiles.
- *
- * Returns the number of tiles, or -1 on error.
- * If tiles is not NULL, it will be allocated and filled with tile coordinates.
- */
-static int get_base_tile_list(const TileManifest *manifest, TileCoord **tiles) {
-    if (!manifest) {
-        error("Manifest required for base tile list");
-        return -1;
-    }
-
-    /* Count total tiles across all zoom levels */
-    int total = 0;
-    for (int z = manifest->min_zoom; z <= manifest->max_zoom; z++) {
-        ZoomTileSet *zts = &manifest->zooms[z - manifest->min_zoom];
-        total += zts->count;
-    }
-
-    if (tiles == NULL) {
-        return total;
-    }
-
-    /* Allocate tile list */
-    *tiles = malloc(total * sizeof(TileCoord));
-    if (!*tiles) {
-        error("Failed to allocate tile list (%d tiles)", total);
-        return -1;
-    }
-
-    /* Extract tiles from all zoom levels */
-    int idx = 0;
-    for (int z = manifest->min_zoom; z <= manifest->max_zoom; z++) {
-        ZoomTileSet *zts = &manifest->zooms[z - manifest->min_zoom];
-        for (int i = 0; i < zts->count; i++) {
-            PackedTile pt = zts->tiles[i];
-            (*tiles)[idx].z = z;
-            (*tiles)[idx].x = (pt >> 16) & 0xFFFF;
-            (*tiles)[idx].y = pt & 0xFFFF;
-            idx++;
-        }
-    }
-
-    return total;
-}
-
-/*
- * Generate overview tiles for a zoom level by scanning child tiles.
- *
- * Finds all parent tiles that have children at zoom+1, and generates
- * overview tiles for them.
- *
- * Returns 0 on success, -1 on error.
- */
-static int generate_overview_tiles_for_zoom(
-    int zoom,
-    const char *outpath,
-    const char *tile_path,
-    const char *format,
-    GDALRIOResampleAlg resample_alg
-) {
-    int child_zoom = zoom + 1;
-
-    /* Build path to child zoom directory */
-    char child_dir[PATH_SIZE];
-    snprintf(child_dir, sizeof(child_dir), "%s/%s/%d", outpath, tile_path, child_zoom);
-
-    /* Check if child directory exists */
-    struct stat st;
-    if (stat(child_dir, &st) != 0 || !S_ISDIR(st.st_mode)) {
-        return 0;  /* No child tiles */
-    }
-
-    /* Scan child directories to find unique parent tiles */
-    /* Use a simple dynamic array for parent tile coordinates */
-    int parent_capacity = 1024;
-    int parent_count = 0;
-    TileCoord *parent_tiles = malloc(parent_capacity * sizeof(TileCoord));
-    if (!parent_tiles) {
-        error("Failed to allocate parent tiles array");
-        return -1;
-    }
-
-    DIR *x_dir = opendir(child_dir);
-    if (!x_dir) {
-        free(parent_tiles);
-        return 0;  /* No child tiles */
-    }
-
-    struct dirent *x_entry;
-    while ((x_entry = readdir(x_dir)) != NULL) {
-        if (x_entry->d_name[0] == '.') continue;
-
-        char *endptr;
-        long child_x = strtol(x_entry->d_name, &endptr, 10);
-        if (*endptr != '\0') continue;
-
-        char x_path[PATH_SIZE];
-        snprintf(x_path, sizeof(x_path), "%s/%s", child_dir, x_entry->d_name);
-
-        if (stat(x_path, &st) != 0 || !S_ISDIR(st.st_mode)) continue;
-
-        DIR *y_dir = opendir(x_path);
-        if (!y_dir) continue;
-
-        struct dirent *y_entry;
-        while ((y_entry = readdir(y_dir)) != NULL) {
-            if (y_entry->d_name[0] == '.') continue;
-
-            /* Extract Y from filename (e.g., "123.webp") */
-            char *dot = strrchr(y_entry->d_name, '.');
-            if (!dot) continue;
-
-            char y_str[32];
-            size_t y_len = dot - y_entry->d_name;
-            if (y_len >= sizeof(y_str)) continue;
-            strncpy(y_str, y_entry->d_name, y_len);
-            y_str[y_len] = '\0';
-
-            long child_y = strtol(y_str, &endptr, 10);
-            if (*endptr != '\0') continue;
-
-            /* Calculate parent tile coords (XYZ scheme) */
-            int parent_x = (int)(child_x / 2);
-            int parent_y = (int)(child_y / 2);
-
-            /* Check if parent already in list */
-            int found = 0;
-            for (int i = 0; i < parent_count; i++) {
-                if (parent_tiles[i].x == parent_x && parent_tiles[i].y == parent_y) {
-                    found = 1;
-                    break;
-                }
-            }
-
-            if (!found) {
-                if (parent_count >= parent_capacity) {
-                    parent_capacity *= 2;
-                    TileCoord *new_tiles = realloc(parent_tiles, parent_capacity * sizeof(TileCoord));
-                    if (!new_tiles) {
-                        error("Failed to expand parent tiles array");
-                        closedir(y_dir);
-                        closedir(x_dir);
-                        free(parent_tiles);
-                        return -1;
-                    }
-                    parent_tiles = new_tiles;
-                }
-                parent_tiles[parent_count].z = zoom;
-                parent_tiles[parent_count].x = parent_x;
-                parent_tiles[parent_count].y = parent_y;
-                parent_count++;
-            }
-        }
-        closedir(y_dir);
-    }
-    closedir(x_dir);
-
-    /* Generate overview tiles */
-    int generated = 0;
-    int skipped = 0;
-    int existing = 0;
-
-    for (int i = 0; i < parent_count; i++) {
-        int result = generate_overview_tile(
-            parent_tiles[i].z, parent_tiles[i].x, parent_tiles[i].y,
-            outpath, tile_path, format, resample_alg
-        );
-        if (result == 0) {
-            generated++;
-        } else if (result == 1) {
-            skipped++;
-        } else if (result == 2) {
-            existing++;
-        }
-    }
-
-    free(parent_tiles);
-
-    if (existing > 0) {
-        info("    Zoom %d: %d generated, %d skipped, %d existing (base tiles)",
-             zoom, generated, skipped, existing);
-    } else {
-        info("    Zoom %d: %d generated, %d skipped", zoom, generated, skipped);
-    }
-
-    return 0;
-}
+/* Maximum zoom level we support (zoom 0-20 covers all practical cases) */
+#define MAX_ZOOM 20
 
 int generate_tileset_tiles_parallel(
     const Tileset **tilesets,
@@ -752,9 +317,6 @@ int generate_tileset_tiles_parallel(
     for (int t = 0; t < tileset_count; t++) {
         const Tileset *tileset = tilesets[t];
 
-        char vrt_path[PATH_SIZE];
-        snprintf(vrt_path, sizeof(vrt_path), "%s/__%s.vrt", tmppath, tileset->name);
-
         info("\n=== Tiles: %s ===", tileset->name);
 
         /* Build tile manifest based on dataset coverage and max_lod */
@@ -767,133 +329,151 @@ int generate_tileset_tiles_parallel(
         int zoom_min = manifest->min_zoom;
         int zoom_max = manifest->max_zoom;
 
-        /* ================================================================
-         * Phase 1: Generate base tiles at each dataset's max_lod level
-         * ================================================================ */
-        info("  Phase 1: Base tiles (zoom %d to %d)", zoom_min, zoom_max);
+        /* Build all zoom-specific VRTs upfront and count total tiles */
+        char vrt_paths[MAX_ZOOM + 1][PATH_SIZE];
+        int total_tiles = 0;
 
-        /* Get list of base tiles to generate (all zoom levels with entries) */
-        TileCoord *tiles = NULL;
-        int total_tiles = get_base_tile_list(manifest, &tiles);
-        free_tile_manifest(manifest);
+        info("  Building zoom-specific VRTs for zoom %d to %d", zoom_min, zoom_max);
+        for (int z = zoom_min; z <= zoom_max; z++) {
+            ZoomTileSet *zts = &manifest->zooms[z - zoom_min];
+            vrt_paths[z][0] = '\0';  /* Mark as invalid initially */
 
-        if (total_tiles < 0 || !tiles) {
-            error("Failed to build tile list for tileset: %s", tileset->name);
+            if (zts->count == 0) continue;
+
+            if (build_zoom_vrt(tileset, z, tmppath, vrt_paths[z]) != 0) {
+                /* No datasets for this zoom level */
+                continue;
+            }
+
+            total_tiles += zts->count;
+            info("    Zoom %d: %d tiles", z, zts->count);
+        }
+
+        if (total_tiles == 0) {
+            info("  No tiles to generate");
+            free_tile_manifest(manifest);
+            continue;
+        }
+
+        info("  Total: %d tiles across %d zoom levels", total_tiles, zoom_max - zoom_min + 1);
+
+        /* Collect all tiles from all zoom levels into a single list */
+        TileCoord *tiles = malloc(total_tiles * sizeof(TileCoord));
+        if (!tiles) {
+            error("Failed to allocate tile list");
+            free_tile_manifest(manifest);
             return -1;
         }
 
-        info("    Generating %d base tiles with %d workers", total_tiles, num_workers);
+        int tile_idx = 0;
+        for (int z = zoom_min; z <= zoom_max; z++) {
+            if (vrt_paths[z][0] == '\0') continue;  /* Skip zoom levels without VRT */
 
-        if (total_tiles > 0) {
-            /* Limit workers to number of tiles */
-            int actual_workers = num_workers;
-            if (actual_workers > total_tiles) {
-                actual_workers = total_tiles;
+            ZoomTileSet *zts = &manifest->zooms[z - zoom_min];
+            for (int i = 0; i < zts->count; i++) {
+                PackedTile pt = zts->tiles[i];
+                tiles[tile_idx].z = z;
+                tiles[tile_idx].x = (pt >> 16) & 0xFFFF;
+                tiles[tile_idx].y = pt & 0xFFFF;
+                tile_idx++;
             }
+        }
 
-            /* Create shared atomic counter for dynamic work distribution */
-            atomic_int *next_tile = mmap(NULL, sizeof(atomic_int),
-                                         PROT_READ | PROT_WRITE,
-                                         MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-            if (next_tile == MAP_FAILED) {
-                error("Failed to create shared memory for tile counter");
+        /* Limit workers to number of tiles */
+        int actual_workers = num_workers;
+        if (actual_workers > total_tiles) {
+            actual_workers = total_tiles;
+        }
+
+        /* Create shared atomic counter for dynamic work distribution */
+        atomic_int *next_tile = mmap(NULL, sizeof(atomic_int),
+                                     PROT_READ | PROT_WRITE,
+                                     MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+        if (next_tile == MAP_FAILED) {
+            error("Failed to create shared memory for tile counter");
+            free(tiles);
+            free_tile_manifest(manifest);
+            return -1;
+        }
+        atomic_store(next_tile, 0);
+
+        /* Fork worker processes - single parallel phase for all zoom levels */
+        pid_t pids[MAX_JOBS];
+
+        for (int w = 0; w < actual_workers; w++) {
+            pid_t pid = fork();
+            if (pid < 0) {
+                error("Failed to fork worker %d", w);
+                for (int i = 0; i < w; i++) {
+                    kill(pids[i], SIGTERM);
+                }
+                munmap(next_tile, sizeof(atomic_int));
                 free(tiles);
+                free_tile_manifest(manifest);
                 return -1;
             }
-            atomic_store(next_tile, 0);
 
-            /* Fork worker processes */
-            pid_t pids[MAX_JOBS];
+            if (pid == 0) {
+                /* Child process - limit GDAL cache to prevent memory exhaustion */
+                GDALSetCacheMax64(32 * 1024 * 1024);  /* 32 MB absolute limit */
+                CPLSetConfigOption("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR");
 
-            for (int w = 0; w < actual_workers; w++) {
-                pid_t pid = fork();
-                if (pid < 0) {
-                    error("Failed to fork worker %d", w);
-                    /* Kill already-started workers */
-                    for (int i = 0; i < w; i++) {
-                        kill(pids[i], SIGTERM);
-                    }
-                    munmap(next_tile, sizeof(atomic_int));
-                    free(tiles);
-                    return -1;
-                }
+                /* Cache of open VRT handles by zoom level (opened lazily) */
+                GDALDatasetH vrt_cache[MAX_ZOOM + 1] = {NULL};
 
-                if (pid == 0) {
-                    /* Child process - open own dataset handle */
-                    GDALDatasetH worker_ds = GDALOpen(vrt_path, GA_ReadOnly);
-                    if (!worker_ds) {
-                        error("Worker %d: Failed to open dataset", w);
-                        _exit(1);
-                    }
+                /* Dynamic work distribution: grab tiles until none remain */
+                while (1) {
+                    int i = atomic_fetch_add(next_tile, 1);
+                    if (i >= total_tiles) break;
 
-                    int generated = 0;
-                    int skipped = 0;
-                    int existing = 0;
+                    int z = tiles[i].z;
 
-                    /* Dynamic work distribution: grab tiles until none remain */
-                    while (1) {
-                        int i = atomic_fetch_add(next_tile, 1);
-                        if (i >= total_tiles) break;
-
-                        int result = generate_base_tile(worker_ds, tiles[i].z, tiles[i].x, tiles[i].y,
-                                                   outpath, tileset->tile_path, format,
-                                                   resample_alg);
-                        if (result == 0) {
-                            generated++;
-                        } else if (result == 1) {
-                            skipped++;
-                        } else if (result == 2) {
-                            existing++;
+                    /* Open VRT for this zoom level if not already cached */
+                    if (!vrt_cache[z]) {
+                        vrt_cache[z] = GDALOpen(vrt_paths[z], GA_ReadOnly);
+                        if (!vrt_cache[z]) {
+                            error("Worker %d: Failed to open VRT for zoom %d", w, z);
+                            /* Clean up and exit */
+                            for (int zz = 0; zz <= MAX_ZOOM; zz++) {
+                                if (vrt_cache[zz]) GDALClose(vrt_cache[zz]);
+                            }
+                            _exit(1);
                         }
                     }
 
-                    GDALClose(worker_ds);
-
-                    if (existing > 0) {
-                        info("    Worker %d: %d generated, %d skipped, %d existing",
-                             w, generated, skipped, existing);
-                    } else {
-                        info("    Worker %d: %d generated, %d skipped", w, generated, skipped);
-                    }
-
-                    free(tiles);
-                    _exit(0);
+                    generate_base_tile(vrt_cache[z], tiles[i].z, tiles[i].x, tiles[i].y,
+                                       outpath, tileset->tile_path, format,
+                                       resample_alg);
                 }
 
-                /* Parent - save child PID */
-                pids[w] = pid;
-            }
-
-            /* Wait for all workers */
-            for (int w = 0; w < actual_workers; w++) {
-                int status;
-                waitpid(pids[w], &status, 0);
-                if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-                    error("Worker %d failed", w);
-                    munmap(next_tile, sizeof(atomic_int));
-                    free(tiles);
-                    return -1;
+                /* Close all cached VRTs */
+                for (int z = 0; z <= MAX_ZOOM; z++) {
+                    if (vrt_cache[z]) GDALClose(vrt_cache[z]);
                 }
+
+                _exit(0);
             }
 
-            munmap(next_tile, sizeof(atomic_int));
+            pids[w] = pid;
         }
 
-        free(tiles);
-
-        /* ================================================================
-         * Phase 2: Generate overview tiles from child tiles
-         * ================================================================ */
-        if (zoom_max > zoom_min) {
-            info("  Phase 2: Overview tiles (zoom %d to %d)", zoom_max - 1, zoom_min);
-
-            for (int z = zoom_max - 1; z >= zoom_min; z--) {
-                if (generate_overview_tiles_for_zoom(z, outpath, tileset->tile_path, format,
-                                                     resample_alg) != 0) {
-                    error("Failed to generate overview tiles at zoom %d", z);
-                    return -1;
-                }
+        /* Wait for all workers */
+        int failed = 0;
+        for (int w = 0; w < actual_workers; w++) {
+            int status;
+            waitpid(pids[w], &status, 0);
+            if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+                error("Worker %d failed", w);
+                failed = 1;
             }
+        }
+
+        munmap(next_tile, sizeof(atomic_int));
+        free(tiles);
+        free_tile_manifest(manifest);
+
+        if (failed) {
+            return -1;
         }
 
         info("  Tile generation complete");

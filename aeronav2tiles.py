@@ -422,6 +422,56 @@ def build_vrt(vrtfile, files):
 
     return vrtfile
 
+
+def build_zoom_vrt(tileset_name, tileset_def, all_datasets, zoom, tmppath):
+    """
+    Build a VRT for a specific zoom level with appropriately ordered datasets.
+
+    At each zoom level Z, we include datasets where max_lod >= Z. Datasets are
+    ordered by max_lod DESCENDING so that smaller max_lod datasets (which are
+    more appropriate for this zoom level) appear last and render on top.
+
+    Parameters
+    ----------
+    tileset_name: str
+        The name of the tileset (for VRT filename)
+    tileset_def: dict
+        Tileset definition with 'datasets' list
+    all_datasets: dict
+        Dict of all dataset definitions with 'max_lod' values
+    zoom: int
+        The zoom level to build the VRT for
+    tmppath: str
+        Directory containing reprojected TIF files
+
+    Returns
+    -------
+    str or None
+        Path to the VRT file, or None if no datasets are appropriate
+    """
+    from tile_manifest import get_datasets_for_zoom, get_reprojected_tif_path
+
+    # Get datasets for this zoom, ordered by max_lod descending
+    dataset_names = get_datasets_for_zoom(tileset_def, all_datasets, zoom)
+
+    if not dataset_names:
+        return None
+
+    # Convert dataset names to file paths (datasets were ordered for VRT stacking)
+    files = []
+    for name in dataset_names:
+        tif_path = get_reprojected_tif_path(tmppath, name)
+        if os.path.exists(tif_path):
+            files.append(tif_path)
+
+    if not files:
+        return None
+
+    # Build the VRT file
+    vrt_path = os.path.join(tmppath, f'__{tileset_name}__z{zoom}.vrt')
+    return build_vrt(vrt_path, files)
+
+
 def calculate_resolution_for_zoom(zoom_level, epsg_code):
     '''
     Calculate the resolution in meters per pixel for a given zoom level and EPSG code.
@@ -889,7 +939,7 @@ def main():
             for future in futures:
                 future.result()  # Raises any exception that occurred
 
-    # Phase 3: Build VRTs and generate tiles for each tileset
+    # Phase 3: Build zoom-specific VRTs and generate tiles for each tileset
     for tileset_name in tilesets:
         tileset_def = tileset_datasets[tileset_name]
         reprojected_files = tileset_reprojected_files[tileset_name]
@@ -897,20 +947,14 @@ def main():
         if not reprojected_files:
             continue
 
-        if not args.quiet:
-            print(f'Building VRT for {tileset_name}')
-
-        # Build a VRT file from the reprojected datasets
-        vrt_path = os.path.join(args.tmppath, f'__{tileset_name}.vrt')
-        build_vrt(vrt_path, reprojected_files)
-
-        # Create the tileset from the VRT file
+        # Create the tileset from zoom-specific VRTs
         if args.outpath:
             # Create the output tileset directory if it does not exist
             tile_path = os.path.join(args.outpath, tileset_def['tile_path'])
             os.makedirs(tile_path, exist_ok=True)
 
             from tile_manifest import compute_tile_manifest, manifest_summary, get_tileset_zoom_range
+            from rasterio_tiles import generate_tiles_multi_zoom
 
             # Derive zoom range from datasets: min=0, max=max(max_lod)
             min_zoom, max_zoom = get_tileset_zoom_range(tileset_def, datasets)
@@ -928,18 +972,30 @@ def main():
                 print(f'Building tiles for {tileset_name}')
                 print(manifest_summary(tile_manifest))
 
-            # Generate tiles using rasterio-based tile generator
-            from rasterio_tiles import generate_tiles
-            generate_tiles(
-                input_path=vrt_path,
+            # Build all zoom-specific VRTs upfront
+            # Each zoom level Z uses a VRT containing only datasets where max_lod >= Z,
+            # ordered so that smaller max_lod datasets (more appropriate for that zoom)
+            # are rendered on top.
+            vrt_paths = {}
+            for zoom in range(min_zoom, max_zoom + 1):
+                # Skip zoom levels with no tiles
+                if zoom not in tile_manifest or not tile_manifest[zoom]:
+                    continue
+
+                # Build zoom-specific VRT
+                vrt_path = build_zoom_vrt(tileset_name, tileset_def, datasets, zoom, args.tmppath)
+                if vrt_path is not None:
+                    vrt_paths[zoom] = vrt_path
+
+            # Generate all tiles in a single parallel phase
+            generate_tiles_multi_zoom(
+                vrt_paths=vrt_paths,
                 output_path=tile_path,
-                min_zoom=min_zoom,
-                max_zoom=max_zoom,
+                tile_manifest=tile_manifest,
                 resampling=args.tile_resampling,
                 tile_format=args.format.upper(),
                 num_processes=args.tile_workers,
                 quiet=args.quiet,
-                tile_manifest=tile_manifest,
             )
 
     # Remove the temporary directory and its contents if remove is True
