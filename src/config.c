@@ -249,9 +249,9 @@ static int load_config(const char *config_path) {
         cJSON *tile_path = cJSON_GetObjectItem(ts_json, "tile_path");
         ts->tile_path = strdup_safe(cJSON_GetStringValue(tile_path));
 
-        cJSON *zoom = cJSON_GetObjectItem(ts_json, "zoom");
-        ts->zoom_min = (int)cJSON_GetNumberValue(cJSON_GetArrayItem(zoom, 0));
-        ts->zoom_max = (int)cJSON_GetNumberValue(cJSON_GetArrayItem(zoom, 1));
+        /* zoom_min and zoom_max are computed from datasets, not from config */
+        ts->zoom_min = 0;
+        ts->zoom_max = 0;  /* Will be computed after datasets are loaded */
 
         cJSON *ds_array = cJSON_GetObjectItem(ts_json, "datasets");
         ts->dataset_count = cJSON_GetArraySize(ds_array);
@@ -269,6 +269,19 @@ static int load_config(const char *config_path) {
         }
 
         i++;
+    }
+
+    /* Compute zoom_max for each tileset from its datasets' max_lod values */
+    for (i = 0; i < g_tileset_count; i++) {
+        Tileset *ts = &g_tilesets[i];
+        int max_lod = 0;
+        for (int j = 0; j < ts->dataset_count; j++) {
+            const Dataset *ds = get_dataset(ts->datasets[j]);
+            if (ds && ds->max_lod > max_lod) {
+                max_lod = ds->max_lod;
+            }
+        }
+        ts->zoom_max = max_lod > 0 ? max_lod : 12;  /* Default to 12 if no max_lod found */
     }
 
     cJSON_Delete(root);

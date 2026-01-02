@@ -693,6 +693,75 @@ static int save_to_file(GDALDatasetH ds, const char *outpath) {
     return 0;
 }
 
+/*
+ * Get the center latitude of a georeferenced GDAL dataset in radians.
+ * Transforms the center point to WGS84 to get the latitude.
+ * Returns NAN if the transformation fails.
+ *
+ * This is used to adjust the output resolution for Web Mercator distortion.
+ * At high latitudes, the same EPSG:3857 resolution represents finer ground
+ * resolution, so we coarsen the output to avoid upscaling.
+ */
+static double get_center_latitude_from_dataset(GDALDatasetH ds) {
+    double gt[6];
+    if (GDALGetGeoTransform(ds, gt) != CE_None) {
+        return NAN;
+    }
+
+    /* Get center point in native coordinates */
+    int width = GDALGetRasterXSize(ds);
+    int height = GDALGetRasterYSize(ds);
+    double center_x = gt[0] + (width / 2.0) * gt[1] + (height / 2.0) * gt[2];
+    double center_y = gt[3] + (width / 2.0) * gt[4] + (height / 2.0) * gt[5];
+
+    /* Get source CRS */
+    const char *src_wkt = GDALGetProjectionRef(ds);
+    if (!src_wkt || strlen(src_wkt) == 0) {
+        return NAN;
+    }
+
+    OGRSpatialReferenceH src_srs = OSRNewSpatialReference(src_wkt);
+    if (!src_srs) {
+        return NAN;
+    }
+
+    /* Create WGS84 CRS with traditional GIS axis order (lon, lat) */
+    OGRSpatialReferenceH wgs84 = OSRNewSpatialReference(NULL);
+    OSRSetWellKnownGeogCS(wgs84, "WGS84");
+    OSRSetAxisMappingStrategy(wgs84, OAMS_TRADITIONAL_GIS_ORDER);
+    OSRSetAxisMappingStrategy(src_srs, OAMS_TRADITIONAL_GIS_ORDER);
+
+    /* Create coordinate transformation */
+    OGRCoordinateTransformationH transform = OCTNewCoordinateTransformation(src_srs, wgs84);
+    OSRDestroySpatialReference(src_srs);
+
+    if (!transform) {
+        OSRDestroySpatialReference(wgs84);
+        return NAN;
+    }
+
+    /* Transform center point to WGS84 */
+    double lon = center_x;
+    double lat = center_y;
+    if (!OCTTransform(transform, 1, &lon, &lat, NULL)) {
+        OCTDestroyCoordinateTransformation(transform);
+        OSRDestroySpatialReference(wgs84);
+        return NAN;
+    }
+
+    OCTDestroyCoordinateTransformation(transform);
+    OSRDestroySpatialReference(wgs84);
+
+    /* Validate latitude is in reasonable range */
+    if (lat < -90.0 || lat > 90.0) {
+        error("Invalid latitude %.2f from coordinate transform", lat);
+        return NAN;
+    }
+
+    /* Return latitude in radians */
+    return lat * M_PI / 180.0;
+}
+
 static int process_dataset(const char *zippath,
                            const Dataset *dataset,
                            double resolution,
@@ -759,14 +828,25 @@ static int process_dataset(const char *zippath,
         src = tmp;
     }
 
+    /* Adjust resolution for latitude (Web Mercator distortion).
+     * The input 'resolution' is equatorial; we coarsen it at high latitudes
+     * to avoid upscaling the source data. */
+    double center_lat = get_center_latitude_from_dataset(src);
+    if (isnan(center_lat)) {
+        error("Failed to determine center latitude for %s", dataset->name);
+        GDALClose(src);
+        return -1;
+    }
+    double adjusted_resolution = resolution / cos(center_lat);
+
     /* Step 4: Warp to target EPSG */
-    info("  %s Warping to EPSG:%d at %.2f m/pixel...", dataset->name, epsg, resolution);
-    if (warp_to_target(src, resolution, num_threads, epsg, resampling, &tmp) != 0) {
+    info("  %s Warping to EPSG:%d at %.2f m/pixel...", dataset->name, epsg, adjusted_resolution);
+    if (warp_to_target(src, adjusted_resolution, num_threads, epsg, resampling, &tmp) != 0) {
         GDALClose(src);
         return -1;
     }
     GDALClose(src);
-    info("    %s Warped to EPSG:%d at %.2f m/pixel...", dataset->name, epsg, resolution);
+    info("    %s Warped to EPSG:%d at %.2f m/pixel...", dataset->name, epsg, adjusted_resolution);
     src = tmp;
 
     /* Step 5: Clip to geographic bounds */
@@ -803,7 +883,7 @@ static int process_dataset(const char *zippath,
 typedef struct {
     const char *zippath;          /* Directory containing ZIP files */
     const Dataset *dataset;       /* Dataset to process */
-    double resolution;            /* Target resolution (from dataset max_lod) */
+    double resolution;            /* Target resolution (from tileset's max max_lod) */
     char temp_file[PATH_SIZE];    /* Output temp file path */
     int num_threads;              /* Threads per job for warping */
     int epsg;                     /* Target EPSG code */
@@ -923,12 +1003,13 @@ int process_datasets_parallel(
                 continue;
             }
 
-            double resolution = resolution_for_zoom(dataset->max_lod);
+            /* Use equatorial resolution - will be adjusted for latitude in worker */
+            double equatorial_resolution = resolution_for_zoom(dataset->max_lod);
 
             DatasetJob *job = &jobs[job_index++];
             job->zippath = zippath;
             job->dataset = dataset;
-            job->resolution = resolution;
+            job->resolution = equatorial_resolution;
             job->num_threads = threads_per_job;
             job->epsg = epsg;
             job->resampling = resampling;

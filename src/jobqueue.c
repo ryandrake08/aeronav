@@ -301,6 +301,8 @@ int jobqueue_run(const JobQueueConfig *config, JobQueueResult *result) {
     }
 
 cleanup:
+    ; /* Empty statement required before declaration after label */
+
     /* Shutdown all workers */
     JobMessage shutdown_msg = { .job_index = -1 };
     for (int i = 0; i < num_workers; i++) {

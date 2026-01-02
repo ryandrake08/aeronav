@@ -84,7 +84,6 @@ def load_config(config_path=None):
     for name, ts in config['tilesets'].items():
         tileset_datasets[name] = {
             'tile_path': ts['tile_path'],
-            'zoom': ts['zoom'],  # [min, max] array
             'datasets': ts['datasets'],
         }
 
@@ -324,9 +323,11 @@ def build_vrt(vrtfile, files):
             if dataset.indexes != indexes:
                 raise ValueError(f'The indexes ({dataset.indexes}) from file "{file}" do not match the first file')
 
-            # Ensure the reolution matches the first file
-            if dataset.res[0] != xres or dataset.res[1] != yres:
-                raise ValueError(f'The resolution ({dataset.res}) from file "{file}" does not match the first file')
+            # Track the finest resolution (smallest pixel size) for the VRT
+            if dataset.res[0] < xres:
+                xres = dataset.res[0]
+            if dataset.res[1] < yres:
+                yres = dataset.res[1]
 
             # Append the spatial extend of the dataset
             lefts.append(dataset.bounds.left)
@@ -389,7 +390,7 @@ def build_vrt(vrtfile, files):
             dst = rasterio.windows.from_bounds(*dataset.bounds, transform)  # type: ignore[call-arg]
 
         for i in indexes:
-            # Build the Source element. No resampling needed as the source and destination resolutions are the same
+            # Build the Source element. GDAL handles resampling when source resolution differs from VRT resolution
             source = ET.SubElement(vrt_raster_bands[i], "ComplexSource")
 
             # Add the SourceFilename element
@@ -444,6 +445,46 @@ def calculate_resolution_for_zoom(zoom_level, epsg_code):
     # Both projections use the same basic calculation for resolution at zoom levels
     earth_radius = 6378137  # WGS84 equatorial radius in meters
     return 2 * math.pi * earth_radius / 256 / 2 ** zoom_level
+
+def get_center_latitude_from_bounds(bounds, src_crs):
+    '''
+    Get the center latitude of a bounding box in radians.
+
+    Transforms the center point from source CRS to WGS84 to get the latitude.
+    This is used to adjust the output resolution for Web Mercator distortion.
+    At high latitudes, the same EPSG:3857 resolution represents finer ground
+    resolution, so we coarsen the output to avoid upscaling.
+
+    Parameters
+    ----------
+    bounds: tuple
+        The bounding box (left, bottom, right, top) in source CRS coordinates
+    src_crs: CRS
+        The source coordinate reference system
+
+    Returns
+    -------
+    float
+        The center latitude in radians
+    '''
+    from rasterio.warp import transform as warp_transform
+
+    left, bottom, right, top = bounds
+    center_x = (left + right) / 2.0
+    center_y = (bottom + top) / 2.0
+
+    # Transform center point to WGS84
+    wgs84 = rasterio.crs.CRS.from_epsg(4326)
+    xs, ys = warp_transform(src_crs, wgs84, [center_x], [center_y])
+
+    # rasterio returns (x, y) = (lon, lat) for geographic CRS
+    lat = ys[0]
+
+    # Validate latitude is in reasonable range
+    if lat < -90.0 or lat > 90.0:
+        raise ValueError(f"Invalid latitude {lat:.2f} from coordinate transform")
+
+    return math.radians(lat)
 
 def process(input_full_path, output_full_path, dataset_def, resolution, resampling, dst_epsg=3857, num_threads=None, dataset_name=None, quiet=False):
     '''
@@ -511,6 +552,12 @@ def process(input_full_path, output_full_path, dataset_def, resolution, resampli
     # Calculate source bounds from the dataset's transform, adjusting for the window
     src_bounds = bounds_with_rotation(window, dataset_transform)
 
+    # Adjust resolution for latitude (Web Mercator distortion).
+    # The input 'resolution' is equatorial; we coarsen it at high latitudes
+    # to avoid upscaling the source data.
+    center_lat = get_center_latitude_from_bounds(src_bounds, src_crs)
+    adjusted_resolution = resolution / math.cos(center_lat)
+
     # Adjust the dataset transform to the window
     src_transform = rasterio.windows.transform(window, dataset_transform)
 
@@ -518,7 +565,7 @@ def process(input_full_path, output_full_path, dataset_def, resolution, resampli
     dst_crs = rasterio.crs.CRS.from_epsg(dst_epsg)
 
     # Calculate the size and transform of the reprojected dataset
-    dst_transform, dst_width, dst_height = rasterio.warp.calculate_default_transform(src_crs, dst_crs, window.width, window.height, *src_bounds, resolution=resolution)
+    dst_transform, dst_width, dst_height = rasterio.warp.calculate_default_transform(src_crs, dst_crs, window.width, window.height, *src_bounds, resolution=adjusted_resolution)
 
     # Ensure dst_width and dst_height are integers (they should be from calculate_default_transform)
     assert isinstance(dst_width, int) and isinstance(dst_height, int)
@@ -770,21 +817,21 @@ def main():
                 # Get the dataset definition
                 dataset_def = datasets[dataset_name]
 
-                # Calculate the reprojection resolution for this dataset
-                max_lod = dataset_def['max_lod']
-                resolution = calculate_resolution_for_zoom(max_lod, args.epsg)
-
                 # Determine the input file path
                 input_file = dataset_def.get('input_file', f'{dataset_name}.tif')
                 input_full_path = os.path.join(args.tmppath, input_file)
 
-                # Collect work item for parallel processing (include resolution)
+                # Calculate equatorial resolution - will be adjusted for latitude in process()
+                dataset_max_lod = dataset_def.get('max_lod', 12)
+                equatorial_resolution = calculate_resolution_for_zoom(dataset_max_lod, args.epsg)
+
+                # Collect work item for parallel processing
                 all_work_items.append({
                     'dataset_name': dataset_name,
                     'input_full_path': input_full_path,
                     'output_full_path': output_full_path,
                     'dataset_def': dataset_def,
-                    'resolution': resolution,
+                    'resolution': equatorial_resolution,
                 })
 
             reprojected_files.append(output_full_path)
@@ -864,11 +911,23 @@ def main():
             tile_path = os.path.join(args.outpath, tileset_def['tile_path'])
             os.makedirs(tile_path, exist_ok=True)
 
-            # Get the zoom levels needed for the tileset
-            min_zoom, max_zoom = tileset_def['zoom']
+            from tile_manifest import compute_tile_manifest, manifest_summary, get_tileset_zoom_range
+
+            # Derive zoom range from datasets: min=0, max=max(max_lod)
+            min_zoom, max_zoom = get_tileset_zoom_range(tileset_def, datasets)
+
+            # Compute tile manifest based on dataset coverage and max_lod
+            tile_manifest = compute_tile_manifest(
+                tileset_def=tileset_def,
+                datasets=datasets,
+                tmppath=args.tmppath,
+                zoom_min=min_zoom,
+                zoom_max=max_zoom,
+            )
 
             if not args.quiet:
                 print(f'Building tiles for {tileset_name}')
+                print(manifest_summary(tile_manifest))
 
             # Generate tiles using rasterio-based tile generator
             from rasterio_tiles import generate_tiles
@@ -882,6 +941,7 @@ def main():
                 num_processes=args.tile_workers,
                 quiet=args.quiet,
                 resume=args.resume,
+                tile_manifest=tile_manifest,
             )
 
     # Remove the temporary directory and its contents if remove is True

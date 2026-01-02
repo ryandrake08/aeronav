@@ -18,7 +18,7 @@ CFLAGS = $(CFLAGS_BASE) $(CFLAGS_RELEASE)
 LDFLAGS = $(LDFLAGS_BASE) $(LDFLAGS_RELEASE)
 
 # Source files
-SRCS = main.c config.c processing.c vrt.c tiling.c jobqueue.c cJSON.c
+SRCS = main.c config.c processing.c vrt.c tiling.c manifest.c jobqueue.c cJSON.c
 OBJS = $(SRCS:.c=.o)
 TARGET = aeronav2tiles
 
@@ -46,6 +46,7 @@ main.o: main.c aeronav.h
 config.o: config.c aeronav.h cJSON.h
 processing.o: processing.c aeronav.h jobqueue.h
 vrt.o: vrt.c aeronav.h
-tiling.o: tiling.c aeronav.h
+tiling.o: tiling.c aeronav.h manifest.h
+manifest.o: manifest.c manifest.h aeronav.h
 jobqueue.o: jobqueue.c jobqueue.h
 cJSON.o: cJSON.c cJSON.h

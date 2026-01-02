@@ -8,7 +8,7 @@ tailored to the needs of aeronav2tiles.py.
 
 import math
 import os
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import rasterio
@@ -190,6 +190,7 @@ class TileGenerator:
         tile_format: str = 'WEBP',
         quiet: bool = False,
         resume: bool = False,
+        tile_manifest: Optional[dict] = None,
     ):
         """
         Initialize the tile generator.
@@ -203,6 +204,8 @@ class TileGenerator:
             tile_format: Output tile format (PNG, JPEG, or WEBP)
             quiet: Suppress progress output
             resume: Skip existing tiles
+            tile_manifest: Optional dict mapping zoom -> set of (x, y) XYZ coordinates.
+                          When provided, only tiles in the manifest are generated.
         """
         self.input_path = input_path
         self.output_path = output_path
@@ -213,6 +216,7 @@ class TileGenerator:
         self.tile_ext = {'WEBP': '.webp', 'JPEG': '.jpg', 'PNG': '.png'}.get(self.tile_format, '.png')
         self.quiet = quiet
         self.resume = resume
+        self.tile_manifest = tile_manifest
         self.mercator = GlobalMercator(tile_size)
 
     def _tile_path(self, tx: int, ty: int, zoom: int) -> str:
@@ -301,6 +305,25 @@ class TileGenerator:
 
         return tminx, tminy, tmaxx, tmaxy
 
+    def _should_generate_tile(self, tx: int, ty: int, zoom: int) -> bool:
+        """
+        Check if a tile should be generated based on the manifest.
+
+        Args:
+            tx: Tile X coordinate (TMS scheme)
+            ty: Tile Y coordinate (TMS scheme)
+            zoom: Zoom level
+
+        Returns:
+            True if tile should be generated
+        """
+        if self.tile_manifest is None:
+            return True
+
+        # Convert TMS Y to XYZ Y for manifest lookup
+        xyz_y = (2 ** zoom - 1) - ty
+        return (tx, xyz_y) in self.tile_manifest.get(zoom, set())
+
     def generate_base_tiles(self) -> None:
         """Generate tiles at the maximum zoom level from the source raster."""
         if not self.quiet:
@@ -310,22 +333,31 @@ class TileGenerator:
             # Get tile range at max zoom
             tminx, tminy, tmaxx, tmaxy = self._get_tile_range(src, self.max_zoom)
 
-            total_tiles = (tmaxx - tminx + 1) * (tmaxy - tminy + 1)
-            tiles_done = 0
+            # Build list of tiles to generate, filtered by manifest
+            tile_coords = []
+            for ty in range(tmaxy, tminy - 1, -1):
+                for tx in range(tminx, tmaxx + 1):
+                    if self._should_generate_tile(tx, ty, self.max_zoom):
+                        tile_coords.append((tx, ty))
 
-            # Create directories upfront
-            for tx in range(tminx, tmaxx + 1):
+            if not self.quiet and self.tile_manifest is not None:
+                total_in_bounds = (tmaxx - tminx + 1) * (tmaxy - tminy + 1)
+                print(f"  Filtered to {len(tile_coords)} tiles (from {total_in_bounds} in bounds)")
+
+            # Create directories upfront for tiles we're generating
+            x_coords = set(tx for tx, ty in tile_coords)
+            for tx in x_coords:
                 tile_dir = os.path.join(self.output_path, str(self.max_zoom), str(tx))
                 os.makedirs(tile_dir, exist_ok=True)
 
             # Generate each tile
-            for ty in range(tmaxy, tminy - 1, -1):
-                for tx in range(tminx, tmaxx + 1):
-                    self._create_base_tile(src, tx, ty, self.max_zoom)
-                    tiles_done += 1
+            tiles_done = 0
+            for tx, ty in tile_coords:
+                self._create_base_tile(src, tx, ty, self.max_zoom)
+                tiles_done += 1
 
-                    if not self.quiet and tiles_done % 100 == 0:
-                        print(f"  {tiles_done}/{total_tiles} tiles")
+                if not self.quiet and tiles_done % 100 == 0:
+                    print(f"  {tiles_done}/{len(tile_coords)} tiles")
 
             if not self.quiet:
                 print(f"  Completed {tiles_done} base tiles")
@@ -530,15 +562,21 @@ class TileGenerator:
             # Get tile range at max zoom
             tminx, tminy, tmaxx, tmaxy = self._get_tile_range(src, self.max_zoom)
 
-            # Build list of tile coordinates
+            # Build list of tile coordinates, filtered by manifest
             tile_coords = [
                 (tx, ty, self.max_zoom)
                 for ty in range(tmaxy, tminy - 1, -1)
                 for tx in range(tminx, tmaxx + 1)
+                if self._should_generate_tile(tx, ty, self.max_zoom)
             ]
 
-            # Create directories upfront
-            for tx in range(tminx, tmaxx + 1):
+            if not self.quiet and self.tile_manifest is not None:
+                total_in_bounds = (tmaxx - tminx + 1) * (tmaxy - tminy + 1)
+                print(f"  Filtered to {len(tile_coords)} tiles (from {total_in_bounds} in bounds)")
+
+            # Create directories upfront for tiles we're generating
+            x_coords = set(tx for tx, ty, z in tile_coords)
+            for tx in x_coords:
                 tile_dir = os.path.join(self.output_path, str(self.max_zoom), str(tx))
                 os.makedirs(tile_dir, exist_ok=True)
 
@@ -654,6 +692,7 @@ def generate_tiles(
     num_processes: int = 1,
     quiet: bool = False,
     resume: bool = False,
+    tile_manifest: Optional[dict] = None,
 ) -> None:
     """
     Generate XYZ tiles from a georeferenced raster in EPSG:3857.
@@ -668,6 +707,8 @@ def generate_tiles(
         num_processes: Number of parallel workers
         quiet: Suppress progress output
         resume: Skip existing tiles
+        tile_manifest: Optional dict mapping zoom -> set of (x, y) XYZ coordinates.
+                      When provided, only tiles in the manifest are generated.
     """
     generator = TileGenerator(
         input_path=input_path,
@@ -677,6 +718,7 @@ def generate_tiles(
         tile_format=tile_format,
         quiet=quiet,
         resume=resume,
+        tile_manifest=tile_manifest,
     )
 
     if num_processes > 1:
