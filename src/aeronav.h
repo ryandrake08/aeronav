@@ -106,7 +106,6 @@ typedef struct {
     int tile_workers;           /* Tile generation workers */
     int epsg;                   /* Target EPSG code (default 3857) */
     bool quiet;                 /* Suppress output */
-    bool resume;                /* Skip existing tiles */
     bool cleanup;               /* Remove tmppath after processing */
 } Options;
 
@@ -191,8 +190,7 @@ int generate_tileset_tiles_parallel(
     const char *outpath,
     const char *format,
     const char *resampling,
-    int num_workers,
-    bool resume
+    int num_workers
 );
 
 /* ============================================================================

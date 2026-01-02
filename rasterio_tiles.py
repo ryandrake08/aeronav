@@ -189,7 +189,6 @@ class TileGenerator:
         tile_size: int = 256,
         tile_format: str = 'WEBP',
         quiet: bool = False,
-        resume: bool = False,
         tile_manifest: Optional[dict] = None,
     ):
         """
@@ -203,7 +202,6 @@ class TileGenerator:
             tile_size: Size of output tiles in pixels
             tile_format: Output tile format (PNG, JPEG, or WEBP)
             quiet: Suppress progress output
-            resume: Skip existing tiles
             tile_manifest: Optional dict mapping zoom -> set of (x, y) XYZ coordinates.
                           When provided, only tiles in the manifest are generated.
         """
@@ -215,7 +213,6 @@ class TileGenerator:
         self.tile_format = tile_format.upper()
         self.tile_ext = {'WEBP': '.webp', 'JPEG': '.jpg', 'PNG': '.png'}.get(self.tile_format, '.png')
         self.quiet = quiet
-        self.resume = resume
         self.tile_manifest = tile_manifest
         self.mercator = GlobalMercator(tile_size)
 
@@ -325,35 +322,35 @@ class TileGenerator:
         return (tx, xyz_y) in self.tile_manifest.get(zoom, set())
 
     def generate_base_tiles(self) -> None:
-        """Generate tiles at the maximum zoom level from the source raster."""
+        """Generate base tiles at each zoom level in the manifest from the source raster."""
         if not self.quiet:
-            print(f"Generating base tiles at zoom {self.max_zoom}...")
+            print(f"Generating base tiles (zoom {self.min_zoom} to {self.max_zoom})...")
 
         with rasterio.open(self.input_path) as src:
-            # Get tile range at max zoom
-            tminx, tminy, tmaxx, tmaxy = self._get_tile_range(src, self.max_zoom)
-
-            # Build list of tiles to generate, filtered by manifest
+            # Collect tiles from all zoom levels with manifest entries
             tile_coords = []
-            for ty in range(tmaxy, tminy - 1, -1):
-                for tx in range(tminx, tmaxx + 1):
-                    if self._should_generate_tile(tx, ty, self.max_zoom):
-                        tile_coords.append((tx, ty))
+            for zoom in range(self.min_zoom, self.max_zoom + 1):
+                # Get tile range at this zoom
+                tminx, tminy, tmaxx, tmaxy = self._get_tile_range(src, zoom)
 
-            if not self.quiet and self.tile_manifest is not None:
-                total_in_bounds = (tmaxx - tminx + 1) * (tmaxy - tminy + 1)
-                print(f"  Filtered to {len(tile_coords)} tiles (from {total_in_bounds} in bounds)")
+                # Build list of tiles to generate, filtered by manifest
+                for ty in range(tmaxy, tminy - 1, -1):
+                    for tx in range(tminx, tmaxx + 1):
+                        if self._should_generate_tile(tx, ty, zoom):
+                            tile_coords.append((tx, ty, zoom))
+
+            if not self.quiet:
+                print(f"  {len(tile_coords)} base tiles to generate")
 
             # Create directories upfront for tiles we're generating
-            x_coords = set(tx for tx, ty in tile_coords)
-            for tx in x_coords:
-                tile_dir = os.path.join(self.output_path, str(self.max_zoom), str(tx))
+            for tx, ty, zoom in tile_coords:
+                tile_dir = os.path.join(self.output_path, str(zoom), str(tx))
                 os.makedirs(tile_dir, exist_ok=True)
 
             # Generate each tile
             tiles_done = 0
-            for tx, ty in tile_coords:
-                self._create_base_tile(src, tx, ty, self.max_zoom)
+            for tx, ty, zoom in tile_coords:
+                self._create_base_tile(src, tx, ty, zoom)
                 tiles_done += 1
 
                 if not self.quiet and tiles_done % 100 == 0:
@@ -374,8 +371,8 @@ class TileGenerator:
         """
         tile_path = self._tile_path(tx, ty, zoom)
 
-        # Resume mode: skip if tile already exists
-        if self.resume and os.path.exists(tile_path):
+        # Skip if tile already exists
+        if os.path.exists(tile_path):
             return
 
         # Get tile bounds in EPSG:3857
@@ -460,8 +457,11 @@ class TileGenerator:
         """
         tile_path = self._tile_path(tx, ty, zoom)
 
-        # Resume mode: skip if tile already exists
-        if self.resume and os.path.exists(tile_path):
+        # Always skip if tile already exists.
+        # Base tiles at various zoom levels may have been generated from the VRT
+        # (for datasets with different max_lod). We don't want overview generation
+        # to overwrite those with downsampled versions.
+        if os.path.exists(tile_path):
             return
 
         # Ensure directory exists
@@ -556,29 +556,30 @@ class TileGenerator:
         from functools import partial
 
         if not self.quiet:
-            print(f"Generating base tiles at zoom {self.max_zoom} with {num_processes} workers...")
+            print(f"Generating base tiles (zoom {self.min_zoom} to {self.max_zoom}) with {num_processes} workers...")
 
         with rasterio.open(self.input_path) as src:
-            # Get tile range at max zoom
-            tminx, tminy, tmaxx, tmaxy = self._get_tile_range(src, self.max_zoom)
+            # Collect tiles from all zoom levels with manifest entries
+            tile_coords = []
+            for zoom in range(self.min_zoom, self.max_zoom + 1):
+                tminx, tminy, tmaxx, tmaxy = self._get_tile_range(src, zoom)
 
-            # Build list of tile coordinates, filtered by manifest
-            tile_coords = [
-                (tx, ty, self.max_zoom)
-                for ty in range(tmaxy, tminy - 1, -1)
-                for tx in range(tminx, tmaxx + 1)
-                if self._should_generate_tile(tx, ty, self.max_zoom)
-            ]
+                for ty in range(tmaxy, tminy - 1, -1):
+                    for tx in range(tminx, tmaxx + 1):
+                        if self._should_generate_tile(tx, ty, zoom):
+                            tile_coords.append((tx, ty, zoom))
 
-            if not self.quiet and self.tile_manifest is not None:
-                total_in_bounds = (tmaxx - tminx + 1) * (tmaxy - tminy + 1)
-                print(f"  Filtered to {len(tile_coords)} tiles (from {total_in_bounds} in bounds)")
+            if not self.quiet:
+                print(f"  {len(tile_coords)} base tiles to generate")
 
             # Create directories upfront for tiles we're generating
-            x_coords = set(tx for tx, ty, z in tile_coords)
-            for tx in x_coords:
-                tile_dir = os.path.join(self.output_path, str(self.max_zoom), str(tx))
-                os.makedirs(tile_dir, exist_ok=True)
+            dirs_created = set()
+            for tx, ty, zoom in tile_coords:
+                dir_key = (zoom, tx)
+                if dir_key not in dirs_created:
+                    tile_dir = os.path.join(self.output_path, str(zoom), str(tx))
+                    os.makedirs(tile_dir, exist_ok=True)
+                    dirs_created.add(dir_key)
 
         if not self.quiet:
             print(f"  Processing {len(tile_coords)} tiles...")
@@ -592,7 +593,6 @@ class TileGenerator:
             tile_size=self.tile_size,
             tile_format=self.tile_format,
             tile_ext=self.tile_ext,
-            resume=self.resume,
         )
 
         # Process tiles in parallel
@@ -618,7 +618,6 @@ def _create_tile_worker(
     tile_size: int,
     tile_format: str,
     tile_ext: str,
-    resume: bool,
 ) -> None:
     """
     Worker function for parallel tile generation.
@@ -631,7 +630,6 @@ def _create_tile_worker(
         tile_size: Size of output tiles
         tile_format: Output format driver (PNG, JPEG, or WEBP)
         tile_ext: File extension (.png, .jpg, or .webp)
-        resume: Skip existing tiles
     """
     tx, ty, zoom = coords
     mercator = GlobalMercator(tile_size)
@@ -640,8 +638,8 @@ def _create_tile_worker(
     xyz_y = (2 ** zoom - 1) - ty
     tile_path = os.path.join(output_path, str(zoom), str(tx), f"{xyz_y}{tile_ext}")
 
-    # Resume mode: skip if tile already exists
-    if resume and os.path.exists(tile_path):
+    # Skip if tile already exists
+    if os.path.exists(tile_path):
         return
 
     # Get tile bounds
@@ -691,7 +689,6 @@ def generate_tiles(
     tile_format: str = 'WEBP',
     num_processes: int = 1,
     quiet: bool = False,
-    resume: bool = False,
     tile_manifest: Optional[dict] = None,
 ) -> None:
     """
@@ -706,7 +703,6 @@ def generate_tiles(
         tile_format: Output tile format (PNG, JPEG, or WEBP)
         num_processes: Number of parallel workers
         quiet: Suppress progress output
-        resume: Skip existing tiles
         tile_manifest: Optional dict mapping zoom -> set of (x, y) XYZ coordinates.
                       When provided, only tiles in the manifest are generated.
     """
@@ -717,7 +713,6 @@ def generate_tiles(
         resampling=resampling,
         tile_format=tile_format,
         quiet=quiet,
-        resume=resume,
         tile_manifest=tile_manifest,
     )
 

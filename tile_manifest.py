@@ -121,22 +121,24 @@ def compute_tile_manifest(
     zoom_max: int
 ) -> dict[int, set[tuple[int, int]]]:
     """
-    Compute the set of tiles to generate for a tileset.
+    Compute the set of base tiles to generate for a tileset.
 
     For each dataset in the tileset:
       - Get bounds from reprojected TIF at tmppath
-      - For zoom levels from zoom_min to min(zoom_max, dataset.max_lod):
-        - Add tiles covering those bounds to the manifest
+      - Add tiles at the dataset's max_lod level only
+
+    Base tiles are generated from the VRT at each dataset's max_lod.
+    Overview tiles at lower zooms are built by combining child tiles.
 
     Args:
         tileset_def: Tileset definition with 'datasets' list
         datasets: Dict of dataset definitions with 'max_lod' values
         tmppath: Directory containing reprojected TIF files
-        zoom_min: Minimum zoom level to generate
-        zoom_max: Maximum zoom level to generate
+        zoom_min: Minimum zoom level for the tileset
+        zoom_max: Maximum zoom level for the tileset
 
     Returns:
-        Dict mapping zoom level -> set of (x, y) tile coordinates in XYZ scheme
+        Dict mapping zoom level -> set of (x, y) base tile coordinates in XYZ scheme
     """
     manifest = {z: set() for z in range(zoom_min, zoom_max + 1)}
 
@@ -157,9 +159,11 @@ def compute_tile_manifest(
 
         lon_min, lat_min, lon_max, lat_max = bounds
 
-        # Add tiles for zoom levels up to this dataset's max_lod
-        for zoom in range(zoom_min, min(zoom_max, max_lod) + 1):
-            add_tiles_to_set(manifest[zoom], lon_min, lat_min, lon_max, lat_max, zoom)
+        # Add tiles ONLY at this dataset's max_lod level.
+        # Base tiles are generated from the VRT at max_lod.
+        # Overview tiles at lower zooms are built by combining child tiles.
+        effective_max_lod = min(zoom_max, max(zoom_min, max_lod))
+        add_tiles_to_set(manifest[effective_max_lod], lon_min, lat_min, lon_max, lat_max, effective_max_lod)
 
     return manifest
 

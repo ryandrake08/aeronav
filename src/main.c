@@ -60,7 +60,6 @@ static void print_usage(const char *prog) {
     printf("  -j, --jobs <N>       Concurrent dataset processes (default: auto)\n");
     printf("  -w, --tile-workers <N>  Tile generation workers (default: auto)\n");
     printf("  -f, --format <fmt>   Tile format: png, jpeg, webp (default: webp)\n");
-    printf("  -r, --resume         Skip existing tiles\n");
     printf("  -h, --help           Show this help message\n");
     printf("\n");
     printf("Resampling methods: nearest, bilinear, cubic, cubicspline, lanczos, average, mode\n");
@@ -167,7 +166,6 @@ int main(int argc, char *argv[]) {
         .tile_workers = 0,
         .epsg = 3857,
         .quiet = false,
-        .resume = false,
         .cleanup = false,
     };
     const char *config_path = "aeronav.conf.json";
@@ -185,7 +183,6 @@ int main(int argc, char *argv[]) {
         {"epsg",                required_argument, 0, 'e'},
         {"reproject-resampling", required_argument, 0, 'R'},
         {"tile-resampling",     required_argument, 0, 'S'},
-        {"resume",              no_argument,       0, 'r'},
         {"cleanup",             no_argument,       0, 'C'},
         {"quiet",               no_argument,       0, 'q'},
         {"list",                no_argument,       0, 'l'},
@@ -194,7 +191,7 @@ int main(int argc, char *argv[]) {
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "c:z:t:o:s:f:j:w:e:R:S:rCqlh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "c:z:t:o:s:f:j:w:e:R:S:Cqlh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'o':
                 opts.outpath = optarg;
@@ -239,9 +236,6 @@ int main(int argc, char *argv[]) {
                 break;
             case 'S':
                 opts.tile_resampling = optarg;
-                break;
-            case 'r':
-                opts.resume = true;
                 break;
             case 'C':
                 opts.cleanup = true;
@@ -363,8 +357,7 @@ int main(int argc, char *argv[]) {
             opts.outpath,
             opts.format,
             opts.tile_resampling,
-            opts.tile_workers,
-            opts.resume
+            opts.tile_workers
         );
     }
 
