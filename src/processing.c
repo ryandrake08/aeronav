@@ -188,6 +188,10 @@ static int apply_mask(GDALDatasetH src, const Mask *mask,
     }
     *out = NULL;
 
+    /* Initialize output offsets to input offsets (in case of no-op) */
+    if (out_offset_x) *out_offset_x = win_offset_x;
+    if (out_offset_y) *out_offset_y = win_offset_y;
+
     if (!mask || mask->count == 0) {
         return 0;  /* No mask to apply */
     }
@@ -391,16 +395,25 @@ static int apply_mask(GDALDatasetH src, const Mask *mask,
         return -1;
     }
 
+    /* Output cumulative offset from original image to masked output.
+     * This is needed for adjusting GCP coordinates which are specified
+     * in the original image's pixel space. */
+    if (out_offset_x) *out_offset_x = win_offset_x + min_x;
+    if (out_offset_y) *out_offset_y = win_offset_y + min_y;
+
     *out = dst;
     return 0;
 }
 
 /*
  * Apply ground control points to dataset.
+ * offset_x/y: cumulative offset from original image, used to adjust
+ *             GCP pixel coordinates to match the windowed input.
  * Returns 0 on success, -1 on error.
  * Sets *out to new dataset if GCPs were applied, NULL if no-op.
  */
-static int apply_gcps(GDALDatasetH src, const GCP *gcps, GDALDatasetH *out) {
+static int apply_gcps(GDALDatasetH src, const GCP *gcps,
+                      int offset_x, int offset_y, GDALDatasetH *out) {
     if (!out) {
         error("apply_gcps: NULL output parameter");
         return -1;
@@ -493,13 +506,15 @@ static int apply_gcps(GDALDatasetH src, const GCP *gcps, GDALDatasetH *out) {
         }
     }
 
-    /* Create GDAL_GCP array, transforming lon/lat to source CRS */
+    /* Create GDAL_GCP array, transforming lon/lat to source CRS.
+     * GCP pixel coordinates are specified in original image space, so we
+     * subtract the cumulative offset from windowing (expand_to_rgb + apply_mask). */
     GDAL_GCP gdal_gcps[MAX_GCPS];
     for (int i = 0; i < gcps->count; i++) {
         gdal_gcps[i].pszId = "";
         gdal_gcps[i].pszInfo = "";
-        gdal_gcps[i].dfGCPPixel = gcps->points[i].pixel_x;
-        gdal_gcps[i].dfGCPLine = gcps->points[i].pixel_y;
+        gdal_gcps[i].dfGCPPixel = gcps->points[i].pixel_x - offset_x;
+        gdal_gcps[i].dfGCPLine = gcps->points[i].pixel_y - offset_y;
 
         double x = gcps->points[i].lon;
         double y = gcps->points[i].lat;
@@ -972,6 +987,7 @@ static int process_dataset(const char *zippath,
 
     GDALDatasetH tmp;
     int win_offset_x = 0, win_offset_y = 0;
+    int cumulative_offset_x = 0, cumulative_offset_y = 0;
 
     /* Step 1: RGB expansion if needed (also extracts mask window if paletted) */
     if (expand_to_rgb(src, dataset->mask, &tmp, &win_offset_x, &win_offset_y) != 0) {
@@ -983,8 +999,10 @@ static int process_dataset(const char *zippath,
         src = tmp;
     }
 
-    /* Step 2: Apply pixel-space mask */
-    if (apply_mask(src, dataset->mask, win_offset_x, win_offset_y, &tmp) != 0) {
+    /* Step 2: Apply pixel-space mask.
+     * Captures cumulative offset for GCP coordinate adjustment. */
+    if (apply_mask(src, dataset->mask, win_offset_x, win_offset_y, &tmp,
+                   &cumulative_offset_x, &cumulative_offset_y) != 0) {
         GDALClose(src);
         return -1;
     }
@@ -993,8 +1011,9 @@ static int process_dataset(const char *zippath,
         src = tmp;
     }
 
-    /* Step 3: Apply GCPs if present */
-    if (apply_gcps(src, dataset->gcps, &tmp) != 0) {
+    /* Step 3: Apply GCPs if present.
+     * Pass cumulative offset so GCP pixel coords are adjusted for windowing. */
+    if (apply_gcps(src, dataset->gcps, cumulative_offset_x, cumulative_offset_y, &tmp) != 0) {
         GDALClose(src);
         return -1;
     }
