@@ -6,9 +6,9 @@
  * 2. Expand palette to RGB if needed
  * 3. Apply pixel-space mask
  * 4. Apply GCPs if provided
- * 5. Warp to EPSG:3857 at specified resolution
+ * 5. Warp to target EPSG at specified resolution
  * 6. Clip to geographic bounds if specified
- * 7. Build overviews for efficient lower-zoom tile generation
+ * 7. Save to file and build overviews
  */
 
 #include <stdio.h>
@@ -785,12 +785,12 @@ static int clip_to_bounds(GDALDatasetH src, const GeoBounds *bounds,
 }
 
 /*
- * Save in-memory dataset to compressed GTiff file.
+ * Save in-memory dataset to compressed GTiff file with overviews.
  * Returns 0 on success, -1 on error.
  */
-static int save_to_file(GDALDatasetH ds, const char *outpath) {
+static int save_with_overviews(GDALDatasetH ds, const char *outpath) {
     if (!ds || !outpath) {
-        error("save_to_file: NULL argument");
+        error("save_with_overviews: NULL argument");
         return -1;
     }
 
@@ -804,10 +804,14 @@ static int save_to_file(GDALDatasetH ds, const char *outpath) {
         return -1;
     }
 
+    /* Configure overview compression before creating file */
+    CPLSetConfigOption("COMPRESS_OVERVIEW", "LZW");
+    CPLSetConfigOption("BIGTIFF_OVERVIEW", "IF_SAFER");
+
     char **options = NULL;
     options = CSLSetNameValue(options, "COMPRESS", "LZW");
     options = CSLSetNameValue(options, "TILED", "YES");
-    options = CSLSetNameValue(options, "BIGTIFF", "IF_SAFER");  /* Handle large files with overviews */
+    options = CSLSetNameValue(options, "BIGTIFF", "IF_SAFER");
 
     GDALDatasetH out = GDALCreate(gtiff_driver, outpath, width, height,
                                    band_count, GDT_Byte, options);
@@ -870,33 +874,17 @@ static int save_to_file(GDALDatasetH ds, const char *outpath) {
     }
 
     free(scanline);
-    GDALClose(out);
-    return 0;
-}
 
-/*
- * Build overviews (image pyramids) for a GTiff file.
- * Uses AVERAGE resampling which is standard for overview generation.
- * Returns 0 on success, -1 on error.
- */
-static int build_overviews(const char *filepath) {
-    /* Configure overview compression to match base image */
-    CPLSetConfigOption("COMPRESS_OVERVIEW", "LZW");
-    CPLSetConfigOption("BIGTIFF_OVERVIEW", "IF_SAFER");
+    /* Flush data before building overviews */
+    GDALFlushCache(out);
 
-    GDALDatasetH ds = GDALOpen(filepath, GA_Update);
-    if (!ds) {
-        error("Failed to open file for overview building: %s", filepath);
-        return -1;
-    }
-
-    /* Overview levels: 2, 4, 8, 16, 32, 64
-     * These cover zoom differences of 1-6 levels */
+    /* Build overviews on the open file handle.
+     * Overview levels: 2, 4, 8, 16, 32, 64 cover zoom differences of 1-6 levels */
     int levels[] = {2, 4, 8, 16, 32, 64};
     int num_levels = sizeof(levels) / sizeof(levels[0]);
 
     CPLErr err = GDALBuildOverviews(
-        ds,
+        out,
         "AVERAGE",      /* Resampling method - good for imagery */
         num_levels,     /* Number of overview levels */
         levels,         /* Overview decimation factors */
@@ -906,10 +894,10 @@ static int build_overviews(const char *filepath) {
         NULL            /* Progress data */
     );
 
-    GDALClose(ds);
+    GDALClose(out);
 
     if (err != CE_None) {
-        error("Failed to build overviews for: %s", filepath);
+        error("Failed to build overviews for: %s", outpath);
         return -1;
     }
 
@@ -1070,16 +1058,10 @@ static int process_dataset(const char *zippath,
         src = tmp;
     }
 
-    /* Step 6: Save to output file */
-    int result = save_to_file(src, outpath);
+    /* Step 6: Save to output file with overviews */
+    int result = save_with_overviews(src, outpath);
     GDALClose(src);
-
-    if (result != 0) {
-        return result;
-    }
-
-    /* Step 7: Build overviews for efficient lower-zoom tile generation */
-    return build_overviews(outpath);
+    return result;
 }
 
 /* ============================================================================
