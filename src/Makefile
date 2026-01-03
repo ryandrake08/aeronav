@@ -49,4 +49,7 @@ vrt.o: vrt.c aeronav.h
 tiling.o: tiling.c aeronav.h manifest.h
 manifest.o: manifest.c manifest.h aeronav.h
 jobqueue.o: jobqueue.c jobqueue.h
+
+# Vendored cJSON uses sprintf - suppress deprecation warnings
 cJSON.o: cJSON.c cJSON.h
+	$(CC) $(CFLAGS) -Wno-deprecated-declarations -c -o $@ $<
