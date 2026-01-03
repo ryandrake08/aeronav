@@ -26,10 +26,12 @@
 #include <cpl_string.h>
 
 /*
- * Calculate mask bounding box.
+ * Calculate mask bounding box with optional coordinate offset.
+ * offset_x/offset_y are subtracted from vertex coordinates (for windowed images).
  * Returns 1 if valid bbox found, 0 if no mask or empty.
  */
 static int get_mask_bbox(const Mask *mask, int src_width, int src_height,
+                         int offset_x, int offset_y,
                          int *out_min_x, int *out_min_y,
                          int *out_width, int *out_height) {
     if (!mask || mask->count == 0) {
@@ -41,14 +43,14 @@ static int get_mask_bbox(const Mask *mask, int src_width, int src_height,
         return 0;
     }
 
-    int min_x = (int)outer->vertices[0].x;
-    int max_x = (int)outer->vertices[0].x;
-    int min_y = (int)outer->vertices[0].y;
-    int max_y = (int)outer->vertices[0].y;
+    int min_x = (int)outer->vertices[0].x - offset_x;
+    int max_x = min_x;
+    int min_y = (int)outer->vertices[0].y - offset_y;
+    int max_y = min_y;
 
     for (int i = 1; i < outer->count; i++) {
-        int x = (int)outer->vertices[i].x;
-        int y = (int)outer->vertices[i].y;
+        int x = (int)outer->vertices[i].x - offset_x;
+        int y = (int)outer->vertices[i].y - offset_y;
         if (x < min_x) min_x = x;
         if (x > max_x) max_x = x;
         if (y < min_y) min_y = y;
@@ -73,6 +75,45 @@ static int get_mask_bbox(const Mask *mask, int src_width, int src_height,
     *out_width = width;
     *out_height = height;
     return 1;
+}
+
+/*
+ * Copy bands from source to destination dataset.
+ * Reads from src at (src_x, src_y) and writes to dst at (0, 0).
+ * Returns 0 on success, -1 on error.
+ */
+static int copy_bands(GDALDatasetH src, GDALDatasetH dst,
+                      int src_x, int src_y, int width, int height) {
+    int band_count = GDALGetRasterCount(src);
+
+    unsigned char *band_data = malloc(width * height);
+    if (!band_data) {
+        error("Failed to allocate band buffer");
+        return -1;
+    }
+
+    for (int i = 1; i <= band_count; i++) {
+        GDALRasterBandH src_band = GDALGetRasterBand(src, i);
+        GDALRasterBandH dst_band = GDALGetRasterBand(dst, i);
+
+        if (GDALRasterIO(src_band, GF_Read, src_x, src_y, width, height,
+                         band_data, width, height, GDT_Byte, 0, 0) != CE_None) {
+            error("Failed to read source band %d", i);
+            free(band_data);
+            return -1;
+        }
+        if (GDALRasterIO(dst_band, GF_Write, 0, 0, width, height,
+                         band_data, width, height, GDT_Byte, 0, 0) != CE_None) {
+            error("Failed to write destination band %d", i);
+            free(band_data);
+            return -1;
+        }
+
+        GDALSetRasterColorInterpretation(dst_band, GDALGetRasterColorInterpretation(src_band));
+    }
+
+    free(band_data);
+    return 0;
 }
 
 /*
@@ -116,6 +157,7 @@ static int expand_to_rgb(GDALDatasetH src, const Mask *mask, GDALDatasetH *out,
     int has_bbox = get_mask_bbox(mask,
                                  GDALGetRasterXSize(src),
                                  GDALGetRasterYSize(src),
+                                 0, 0,  /* No offset for original image */
                                  &bbox_min_x, &bbox_min_y,
                                  &bbox_width, &bbox_height);
 
@@ -201,35 +243,10 @@ static int apply_mask(GDALDatasetH src, const Mask *mask,
     int src_band_count = GDALGetRasterCount(src);
 
     /* Calculate mask bounding box, adjusted for any prior windowing */
-    const Ring *outer = &mask->rings[0];
-    if (outer->count == 0) {
-        return 0;  /* Empty mask */
-    }
-
-    int min_x = (int)outer->vertices[0].x - win_offset_x;
-    int max_x = (int)outer->vertices[0].x - win_offset_x;
-    int min_y = (int)outer->vertices[0].y - win_offset_y;
-    int max_y = (int)outer->vertices[0].y - win_offset_y;
-
-    for (int i = 1; i < outer->count; i++) {
-        int x = (int)outer->vertices[i].x - win_offset_x;
-        int y = (int)outer->vertices[i].y - win_offset_y;
-        if (x < min_x) min_x = x;
-        if (x > max_x) max_x = x;
-        if (y < min_y) min_y = y;
-        if (y > max_y) max_y = y;
-    }
-
-    /* Clamp to source image bounds */
-    if (min_x < 0) min_x = 0;
-    if (min_y < 0) min_y = 0;
-    if (max_x > src_width) max_x = src_width;
-    if (max_y > src_height) max_y = src_height;
-
-    int window_width = max_x - min_x;
-    int window_height = max_y - min_y;
-
-    if (window_width <= 0 || window_height <= 0) {
+    int min_x, min_y, window_width, window_height;
+    if (!get_mask_bbox(mask, src_width, src_height,
+                       win_offset_x, win_offset_y,
+                       &min_x, &min_y, &window_width, &window_height)) {
         error("Invalid mask bounding box");
         return -1;
     }
@@ -260,36 +277,10 @@ static int apply_mask(GDALDatasetH src, const Mask *mask,
     }
 
     /* Copy only the window from source bands */
-    unsigned char *band_data = malloc(window_width * window_height);
-    if (!band_data) {
-        error("Failed to allocate band buffer");
+    if (copy_bands(src, dst, min_x, min_y, window_width, window_height) != 0) {
         GDALClose(dst);
         return -1;
     }
-
-    for (int i = 1; i <= src_band_count; i++) {
-        GDALRasterBandH src_band = GDALGetRasterBand(src, i);
-        GDALRasterBandH dst_band = GDALGetRasterBand(dst, i);
-
-        if (GDALRasterIO(src_band, GF_Read, min_x, min_y, window_width, window_height,
-                         band_data, window_width, window_height, GDT_Byte, 0, 0) != CE_None) {
-            error("Failed to read source band %d", i);
-            free(band_data);
-            GDALClose(dst);
-            return -1;
-        }
-        if (GDALRasterIO(dst_band, GF_Write, 0, 0, window_width, window_height,
-                         band_data, window_width, window_height, GDT_Byte, 0, 0) != CE_None) {
-            error("Failed to write destination band %d", i);
-            free(band_data);
-            GDALClose(dst);
-            return -1;
-        }
-
-        GDALSetRasterColorInterpretation(dst_band, GDALGetRasterColorInterpretation(src_band));
-    }
-
-    free(band_data);
 
     /* Set up alpha band */
     GDALRasterBandH alpha_band = GDALGetRasterBand(dst, alpha_band_num);
@@ -444,36 +435,10 @@ static int apply_gcps(GDALDatasetH src, const GCP *gcps,
     }
 
     /* Copy bands */
-    unsigned char *band_data = malloc(width * height);
-    if (!band_data) {
-        error("Failed to allocate band buffer");
+    if (copy_bands(src, dst, 0, 0, width, height) != 0) {
         GDALClose(dst);
         return -1;
     }
-
-    for (int i = 1; i <= band_count; i++) {
-        GDALRasterBandH src_band = GDALGetRasterBand(src, i);
-        GDALRasterBandH dst_band = GDALGetRasterBand(dst, i);
-
-        if (GDALRasterIO(src_band, GF_Read, 0, 0, width, height,
-                         band_data, width, height, GDT_Byte, 0, 0) != CE_None) {
-            error("Failed to read source band %d", i);
-            free(band_data);
-            GDALClose(dst);
-            return -1;
-        }
-        if (GDALRasterIO(dst_band, GF_Write, 0, 0, width, height,
-                         band_data, width, height, GDT_Byte, 0, 0) != CE_None) {
-            error("Failed to write destination band %d", i);
-            free(band_data);
-            GDALClose(dst);
-            return -1;
-        }
-
-        GDALSetRasterColorInterpretation(dst_band, GDALGetRasterColorInterpretation(src_band));
-    }
-
-    free(band_data);
 
     /*
      * Create coordinate transformation from WGS84 to source CRS.
