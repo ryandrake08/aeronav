@@ -196,7 +196,6 @@ int jobqueue_run(const JobQueueConfig *config, JobQueueResult *result) {
     }
 
     int ret = -1;
-    int started_workers = 0;
 
     /* Create worker processes */
     for (int i = 0; i < num_workers; i++) {
@@ -237,7 +236,6 @@ int jobqueue_run(const JobQueueConfig *config, JobQueueResult *result) {
 
         workers[i].pid = pid;
         workers[i].active = true;
-        started_workers++;
     }
 
     /* Job queue state */

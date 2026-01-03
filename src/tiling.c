@@ -23,10 +23,6 @@
 #include "aeronav.h"
 #include "manifest.h"
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 /* Convert resampling string to GDAL enum */
 static GDALRIOResampleAlg parse_resampling(const char *resampling) {
     if (strcmp(resampling, "nearest") == 0) return GRIORA_NearestNeighbour;

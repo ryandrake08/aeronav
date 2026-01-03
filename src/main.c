@@ -14,7 +14,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <signal.h>
-#include <math.h>
 #include <dirent.h>
 
 #include "aeronav.h"
@@ -347,11 +346,6 @@ int main(int argc, char *argv[]) {
                 opts.reproject_resampling) != 0) {
             error("Dataset processing had failures");
         }
-    }
-
-    /* Build VRTs for all tilesets */
-    if (opts.zippath || opts.outpath || opts.tile_only) {
-        build_tilesets_vrt(tilesets, valid_tileset_count, opts.tmppath);
     }
 
     /* Generate tiles for all tilesets */

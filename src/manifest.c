@@ -13,10 +13,6 @@
 
 #include "manifest.h"
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 /* Pack x,y into a single 32-bit value for efficient storage */
 static inline PackedTile pack_tile(int x, int y) {
     return ((uint32_t)x << 16) | (uint32_t)y;

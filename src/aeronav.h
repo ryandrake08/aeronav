@@ -12,7 +12,6 @@
 /* ============================================================================
  * Limits
  * ============================================================================ */
-#define MAX_DATASETS 128      /* Max datasets per tileset */
 #define MAX_TILESETS 32       /* Max tilesets on command line */
 #define MAX_JOBS 64           /* Max parallel jobs/workers */
 #define MAX_GCPS 16           /* Max GCPs per dataset */
@@ -20,6 +19,10 @@
 /* ============================================================================
  * Constants
  * ============================================================================ */
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 #define PATH_SIZE 512
 #define TILE_SIZE 256
@@ -152,20 +155,6 @@ int process_datasets_parallel(
 /* ============================================================================
  * VRT Building (vrt.c)
  * ============================================================================ */
-
-/*
- * Build VRT files for all tilesets.
- *
- * For each tileset, collects the processed dataset files from tmppath,
- * verifies they exist, and builds a VRT at {tmppath}/__{tileset_name}.vrt
- *
- * Returns 0 on success, -1 on error.
- */
-int build_tilesets_vrt(
-    const Tileset **tilesets,
-    int tileset_count,
-    const char *tmppath
-);
 
 /*
  * Build a zoom-specific VRT for a tileset.
