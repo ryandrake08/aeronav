@@ -249,9 +249,9 @@ static int load_config(const char *config_path) {
         cJSON *tile_path = cJSON_GetObjectItem(ts_json, "tile_path");
         ts->tile_path = strdup_safe(cJSON_GetStringValue(tile_path));
 
-        /* zoom_min and zoom_max are computed from datasets, not from config */
+        /* zoom_max is derived from datasets' max_lod values (see loop below) */
         ts->zoom_min = 0;
-        ts->zoom_max = 0;  /* Will be computed after datasets are loaded */
+        ts->zoom_max = 0;
 
         cJSON *ds_array = cJSON_GetObjectItem(ts_json, "datasets");
         ts->dataset_count = cJSON_GetArraySize(ds_array);

@@ -57,9 +57,12 @@ static void tile_bounds(int z, int x, int y,
     *min_x = -ORIGIN_SHIFT + x * res;
     *max_x = -ORIGIN_SHIFT + (x + 1) * res;
 
-    /* Y is flipped in TMS vs XYZ. We use XYZ (origin at top-left) */
+    /*
+     * XYZ tiles have y=0 at north (top), but EPSG:3857 has y=0 at equator
+     * with positive values going north. Convert XYZ y to TMS y for bounds.
+     */
     int max_tile = (1 << z) - 1;
-    int tms_y = max_tile - y;  /* Convert XYZ y to TMS y */
+    int tms_y = max_tile - y;
 
     *min_y = -ORIGIN_SHIFT + tms_y * res;
     *max_y = -ORIGIN_SHIFT + (tms_y + 1) * res;
