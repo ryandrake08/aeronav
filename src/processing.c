@@ -16,14 +16,15 @@
 #include <string.h>
 #include <math.h>
 
-#include "aeronav.h"
-#include "jobqueue.h"
 #include <gdal.h>
 #include <gdal_utils.h>
 #include <gdal_alg.h>
 #include <ogr_srs_api.h>
 #include <cpl_conv.h>
 #include <cpl_string.h>
+
+#include "aeronav.h"
+#include "jobqueue.h"
 
 /*
  * Calculate mask bounding box with optional coordinate offset.
@@ -474,7 +475,14 @@ static int apply_gcps(GDALDatasetH src, const GCP *gcps,
     /* Create GDAL_GCP array, transforming lon/lat to source CRS.
      * GCP pixel coordinates are specified in original image space, so we
      * subtract the cumulative offset from windowing (expand_to_rgb + apply_mask). */
-    GDAL_GCP gdal_gcps[MAX_GCPS];
+    GDAL_GCP *gdal_gcps = malloc(gcps->count * sizeof(GDAL_GCP));
+    if (!gdal_gcps) {
+        error("Failed to allocate GCP array");
+        if (transform) OCTDestroyCoordinateTransformation(transform);
+        GDALClose(dst);
+        return -1;
+    }
+
     for (int i = 0; i < gcps->count; i++) {
         gdal_gcps[i].pszId = "";
         gdal_gcps[i].pszInfo = "";
@@ -497,7 +505,10 @@ static int apply_gcps(GDALDatasetH src, const GCP *gcps,
 
     /* Compute best-fit affine geotransform from GCPs */
     double geotransform[6];
-    if (!GDALGCPsToGeoTransform(gcps->count, gdal_gcps, geotransform, TRUE)) {
+    int gcp_ok = GDALGCPsToGeoTransform(gcps->count, gdal_gcps, geotransform, TRUE);
+    free(gdal_gcps);
+
+    if (!gcp_ok) {
         error("Failed to compute geotransform from GCPs");
         GDALClose(dst);
         return -1;

@@ -18,6 +18,9 @@
 
 #include "aeronav.h"
 
+/* Maximum tilesets that can be specified on command line */
+#define MAX_TILESETS 32
+
 /* Global quiet flag for info() */
 static bool g_quiet = false;
 

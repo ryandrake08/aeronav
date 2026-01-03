@@ -10,13 +10,6 @@
 #include <stdbool.h>
 
 /* ============================================================================
- * Limits
- * ============================================================================ */
-#define MAX_TILESETS 32       /* Max tilesets on command line */
-#define MAX_JOBS 64           /* Max parallel jobs/workers */
-#define MAX_GCPS 16           /* Max GCPs per dataset */
-
-/* ============================================================================
  * Constants
  * ============================================================================ */
 
@@ -25,9 +18,6 @@
 #endif
 
 #define PATH_SIZE 512
-#define TILE_SIZE 256
-#define EARTH_RADIUS 6378137.0
-#define ORIGIN_SHIFT 20037508.342789244  /* pi * EARTH_RADIUS */
 
 /* ============================================================================
  * Data Structures
@@ -150,28 +140,6 @@ int process_datasets_parallel(
     int threads_per_job,
     int epsg,
     const char *resampling
-);
-
-/* ============================================================================
- * VRT Building (vrt.c)
- * ============================================================================ */
-
-/*
- * Build a zoom-specific VRT for a tileset.
- *
- * Includes only datasets where max_lod >= zoom, ordered by max_lod
- * descending so that smaller max_lod datasets (more appropriate for
- * this zoom level) appear last and render on top.
- *
- * vrt_path_out must be at least PATH_SIZE bytes.
- *
- * Returns 0 on success, -1 on error or if no datasets qualify.
- */
-int build_zoom_vrt(
-    const Tileset *tileset,
-    int zoom,
-    const char *tmppath,
-    char *vrt_path_out
 );
 
 /* ============================================================================
