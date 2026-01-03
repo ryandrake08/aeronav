@@ -629,11 +629,12 @@ static int warp_to_target(GDALDatasetH src, double resolution, int num_threads,
 }
 
 /*
- * Clip dataset to geographic bounds (after warp to EPSG:3857).
+ * Clip dataset to geographic bounds (post-warp).
  * Returns 0 on success, -1 on error.
  * Sets *out to new dataset if clipping was applied, NULL if no-op.
  */
-static int clip_to_bounds(GDALDatasetH src, const GeoBounds *bounds, GDALDatasetH *out) {
+static int clip_to_bounds(GDALDatasetH src, const GeoBounds *bounds,
+                          int epsg, GDALDatasetH *out) {
     if (!out) {
         error("clip_to_bounds: NULL output parameter");
         return -1;
@@ -651,7 +652,7 @@ static int clip_to_bounds(GDALDatasetH src, const GeoBounds *bounds, GDALDataset
         return 0;  /* No bounds specified */
     }
 
-    /* Get source bounds in its CRS (should be EPSG:3857) */
+    /* Get source bounds in its CRS */
     double gt[6];
     if (GDALGetGeoTransform(src, gt) != CE_None) {
         error("Failed to get geotransform");
@@ -666,21 +667,19 @@ static int clip_to_bounds(GDALDatasetH src, const GeoBounds *bounds, GDALDataset
     double src_max_y = gt[3];
     double src_min_y = gt[3] + height * gt[5];  /* gt[5] is negative */
 
-    /* Convert bounds from lat/lon to EPSG:3857 */
-    OGRSpatialReferenceH src_srs = OSRNewSpatialReference(NULL);
-    OGRSpatialReferenceH dst_srs = OSRNewSpatialReference(NULL);
-    OSRImportFromEPSG(src_srs, 4326);  /* WGS84 */
-    OSRImportFromEPSG(dst_srs, 3857);  /* Web Mercator */
+    /* Convert bounds from lat/lon to target EPSG */
+    OGRSpatialReferenceH wgs84 = OSRNewSpatialReference(NULL);
+    OGRSpatialReferenceH target = OSRNewSpatialReference(NULL);
+    OSRImportFromEPSG(wgs84, 4326);
+    OSRImportFromEPSG(target, epsg);
+    OSRSetAxisMappingStrategy(wgs84, OAMS_TRADITIONAL_GIS_ORDER);
+    OSRSetAxisMappingStrategy(target, OAMS_TRADITIONAL_GIS_ORDER);
 
-    /* Force traditional GIS (lon, lat) order for WGS84 */
-    OSRSetAxisMappingStrategy(src_srs, OAMS_TRADITIONAL_GIS_ORDER);
-    OSRSetAxisMappingStrategy(dst_srs, OAMS_TRADITIONAL_GIS_ORDER);
-
-    OGRCoordinateTransformationH ct = OCTNewCoordinateTransformation(src_srs, dst_srs);
+    OGRCoordinateTransformationH ct = OCTNewCoordinateTransformation(wgs84, target);
     if (!ct) {
         error("Failed to create coordinate transformation");
-        OSRDestroySpatialReference(src_srs);
-        OSRDestroySpatialReference(dst_srs);
+        OSRDestroySpatialReference(wgs84);
+        OSRDestroySpatialReference(target);
         return -1;
     }
 
@@ -690,43 +689,63 @@ static int clip_to_bounds(GDALDatasetH src, const GeoBounds *bounds, GDALDataset
     double clip_max_y = src_max_y;
 
     /* Transform bounds that are specified.
-     * For lon, we use a valid lat (45) to avoid projection issues.
-     * For lat, we use a valid lon (-100) to avoid projection issues.
-     */
+     * Use center of source dataset for the dummy coordinate to ensure
+     * accurate projection at any location (not just mid-latitudes). */
+    double center_x = (src_min_x + src_max_x) / 2.0;
+    double center_y = (src_min_y + src_max_y) / 2.0;
+
+    /* Inverse transform center point to get WGS84 coords for dummy values */
+    OGRCoordinateTransformationH ct_inv = OCTNewCoordinateTransformation(target, wgs84);
+    double dummy_lat = 45.0, dummy_lon = -100.0;
+    if (ct_inv) {
+        double cx = center_x, cy = center_y;
+        if (OCTTransform(ct_inv, 1, &cx, &cy, NULL)) {
+            dummy_lon = cx;
+            dummy_lat = cy;
+        }
+        OCTDestroyCoordinateTransformation(ct_inv);
+    }
+
     if (!isnan(bounds->lon_min)) {
-        double x = bounds->lon_min, y = 45.0;
+        double x = bounds->lon_min, y = dummy_lat;
         if (OCTTransform(ct, 1, &x, &y, NULL)) {
             clip_min_x = x;
         }
     }
     if (!isnan(bounds->lon_max)) {
-        double x = bounds->lon_max, y = 45.0;
+        double x = bounds->lon_max, y = dummy_lat;
         if (OCTTransform(ct, 1, &x, &y, NULL)) {
             clip_max_x = x;
         }
     }
     if (!isnan(bounds->lat_min)) {
-        double x = -100.0, y = bounds->lat_min;
+        double x = dummy_lon, y = bounds->lat_min;
         if (OCTTransform(ct, 1, &x, &y, NULL)) {
             clip_min_y = y;
         }
     }
     if (!isnan(bounds->lat_max)) {
-        double x = -100.0, y = bounds->lat_max;
+        double x = dummy_lon, y = bounds->lat_max;
         if (OCTTransform(ct, 1, &x, &y, NULL)) {
             clip_max_y = y;
         }
     }
 
     OCTDestroyCoordinateTransformation(ct);
-    OSRDestroySpatialReference(src_srs);
-    OSRDestroySpatialReference(dst_srs);
+    OSRDestroySpatialReference(wgs84);
+    OSRDestroySpatialReference(target);
 
     /* Intersect with source bounds */
     if (clip_min_x < src_min_x) clip_min_x = src_min_x;
     if (clip_max_x > src_max_x) clip_max_x = src_max_x;
     if (clip_min_y < src_min_y) clip_min_y = src_min_y;
     if (clip_max_y > src_max_y) clip_max_y = src_max_y;
+
+    /* Check if clipping actually changes anything */
+    if (clip_min_x == src_min_x && clip_max_x == src_max_x &&
+        clip_min_y == src_min_y && clip_max_y == src_max_y) {
+        return 0;  /* No change needed */
+    }
 
     /* Use GDALTranslate with -projwin */
     char **options = NULL;
@@ -1042,7 +1061,7 @@ static int process_dataset(const char *zippath,
     src = tmp;
 
     /* Step 5: Clip to geographic bounds */
-    if (clip_to_bounds(src, dataset->geobound, &tmp) != 0) {
+    if (clip_to_bounds(src, dataset->geobound, epsg, &tmp) != 0) {
         GDALClose(src);
         return -1;
     }

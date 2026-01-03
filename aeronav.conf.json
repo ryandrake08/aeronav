@@ -1710,10 +1710,19 @@
       "max_lod": 8,
       "src_res": 435.46
     },
-    "Western Aleutian Islands East SEC": {
+    "Western Aleutian Islands East SEC East": {
       "zip_file": "Western_Aleutian_Islands",
+      "input_file": "Western Aleutian Islands East SEC.tif",
       "mask": [[[968, 211], [968, 6113], [16541, 6113], [16541, 211], [968, 211]]],
       "geobound": [178, 51, null, null],
+      "max_lod": 12,
+      "src_res": 42.33
+    },
+    "Western Aleutian Islands East SEC West": {
+      "zip_file": "Western_Aleutian_Islands",
+      "input_file": "Western Aleutian Islands East SEC.tif",
+      "mask": [[[968, 211], [968, 6113], [16541, 6113], [16541, 211], [968, 211]]],
+      "geobound": [null, 51, -172, null],
       "max_lod": 12,
       "src_res": 42.33
     },
@@ -1738,7 +1747,7 @@
       "datasets": ["U.S. VFR Wall Planning Chart", "U.S. Gulf Coast HEL", "Caribbean 2 VFR Chart", "Caribbean 1 VFR Chart", "Brownsville SEC", "Miami SEC", "El Paso SEC", "San Antonio SEC", "Houston SEC", "New Orleans SEC", "Jacksonville SEC", "Los Angeles SEC", "Phoenix SEC", "Albuquerque SEC", "Dallas-Ft Worth SEC", "Memphis SEC", "Atlanta SEC", "Charlotte SEC", "San Francisco SEC", "Las Vegas SEC", "Denver SEC", "Wichita SEC", "Kansas City SEC", "St Louis SEC", "Cincinnati SEC", "Washington SEC", "Klamath Falls SEC", "Salt Lake City SEC", "Cheyenne SEC", "Omaha SEC", "Chicago SEC", "Detroit SEC", "New York SEC", "Seattle SEC", "Great Falls SEC", "Billings SEC", "Twin Cities SEC", "Twin Cities SEC Lake Of The Woods Inset", "Green Bay SEC", "Lake Huron SEC", "Montreal SEC", "Halifax SEC", "Halifax SEC Yarmouth Extension",
       "Juneau SEC Juneau Inset", "Dutch Harbor SEC Dutch Harbor Inset", "Grand Canyon General Aviation", "Grand Canyon General Aviation Marble Canyon Inset", "Honolulu Inset SEC", "Jacksonville SEC Jacksonville Inset", "Ketchikan SEC Ketchikan Inset", "Kodiak SEC Kodiak Inset", "Washington SEC Norfolk Inset",
       "Miami TAC Florida Keys Inset", "Anchorage TAC", "Atlanta TAC", "Baltimore-Washington TAC", "Boston TAC", "Charlotte TAC", "Chicago TAC", "Cincinnati TAC", "Cleveland TAC", "Colorado Springs TAC", "Dallas-Ft Worth TAC", "Denver TAC", "Detroit TAC", "Fairbanks TAC", "Houston TAC", "Kansas City TAC", "Las Vegas TAC", "Los Angeles TAC", "Memphis TAC", "Miami TAC", "Minneapolis-St Paul TAC", "New Orleans TAC", "New York TAC", "Orlando TAC", "Philadelphia TAC", "Phoenix TAC", "Pittsburgh TAC", "Portland TAC", "Puerto Rico-VI TAC", "Salt Lake City TAC", "San Diego TAC", "San Francisco TAC", "Seattle TAC", "St Louis TAC", "Tampa TAC",
-      "Alaska Wall Planning Chart British Columbia Coast Inset", "Alaska Wall Planning Chart", "Alaska Wall Planning Chart Western Aleutian Islands Inset", "Western Aleutian Islands East SEC", "Western Aleutian Islands West SEC", "Dutch Harbor SEC", "Dutch Harbor SEC Pribilof Islands Inset", "Cold Bay SEC", "Ketchikan SEC", "Kodiak SEC", "Kodiak SEC Cape Newenham", "Kodiak SEC Carter Spit", "Seward SEC", "Juneau SEC", "Juneau SEC Seward Glacier Area Inset", "Bethel SEC", "McGrath SEC", "Anchorage SEC", "Nome SEC Lavrentiya-Provideniya Inset", "Nome SEC", "Fairbanks SEC", "Dawson SEC", "Cape Lisburne SEC", "Point Barrow SEC",
+      "Alaska Wall Planning Chart British Columbia Coast Inset", "Alaska Wall Planning Chart", "Alaska Wall Planning Chart Western Aleutian Islands Inset", "Western Aleutian Islands East SEC East", "Western Aleutian Islands East SEC West", "Western Aleutian Islands West SEC", "Dutch Harbor SEC", "Dutch Harbor SEC Pribilof Islands Inset", "Cold Bay SEC", "Ketchikan SEC", "Kodiak SEC", "Kodiak SEC Cape Newenham", "Kodiak SEC Carter Spit", "Seward SEC", "Juneau SEC", "Juneau SEC Seward Glacier Area Inset", "Bethel SEC", "McGrath SEC", "Anchorage SEC", "Nome SEC Lavrentiya-Provideniya Inset", "Nome SEC", "Fairbanks SEC", "Dawson SEC", "Cape Lisburne SEC", "Point Barrow SEC",
       "Mariana Islands Inset SEC", "Samoan Islands Inset SEC", "Hawaiian Islands SEC",
       "Eastern Long Island HEL", "Baltimore HEL", "Boston HEL", "Chicago HEL", "Dallas-Ft Worth HEL", "Detroit HEL", "Houston North HEL", "Houston South HEL", "Los Angeles East HEL", "Los Angeles West HEL", "New York HEL", "Washington HEL",
       "Chicago O'Hare Inset HEL", "Dallas-Love Inset HEL", "Washington Inset HEL", "Boston Downtown HEL", "Downtown Manhattan HEL"]
