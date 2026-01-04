@@ -664,6 +664,9 @@ int generate_tileset_tiles_parallel(
     const char *resampling,
     int num_workers
 ) {
+    /* Initialize GDAL in parent (needed for manifest/VRT building) */
+    GDALAllRegister();
+
     info("\nGenerating tiles...");
 
     GDALRIOResampleAlg resample_alg = parse_resampling(resampling);
@@ -771,7 +774,8 @@ int generate_tileset_tiles_parallel(
             }
 
             if (pid == 0) {
-                /* Child process - limit GDAL cache to prevent memory exhaustion */
+                /* Child process - initialize GDAL and limit cache */
+                GDALAllRegister();
                 GDALSetCacheMax64(32 * 1024 * 1024);  /* 32 MB absolute limit */
                 CPLSetConfigOption("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR");
 
