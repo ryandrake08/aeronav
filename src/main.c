@@ -160,7 +160,7 @@ int main(int argc, char *argv[]) {
         .zippath = NULL,
         .outpath = NULL,
         .tmppath = "/tmp/aeronav2tiles",
-        .format = "webp",
+        .format = "png",
         .reproject_resampling = "bilinear",
         .tile_resampling = "bilinear",
         .tilesets = NULL,

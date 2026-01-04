@@ -798,7 +798,7 @@ def main():
     parser.add_argument('-e', '--epsg', type=int, default=3857, help='Target EPSG code. Default: 3857.')
     parser.add_argument('--reproject-resampling', default='bilinear', help='Resampling for reprojection. Default: bilinear.')
     parser.add_argument('--tile-resampling', default='bilinear', help='Resampling for tile generation. Default: bilinear.')
-    parser.add_argument('-f', '--format', default='webp', choices=['png', 'jpeg', 'webp'], help='Tile format. Default: webp.')
+    parser.add_argument('-f', '--format', default='png', choices=['png', 'jpeg', 'webp'], help='Tile format. Default: png.')
     parser.add_argument('-q', '--quiet', action='store_true', help='Suppress output.')
     # Parallel processing
     parser.add_argument('-j', '--jobs', type=int, default=os.cpu_count(), help=f'Concurrent dataset processes. Default: {os.cpu_count()}.')
