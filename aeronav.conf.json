@@ -1774,6 +1774,14 @@
     "Route Planning": {
       "tile_path": "route",
       "datasets": ["NARC", "PORC_NE", "PORC_NW", "PORC_SE", "PORC_SW", "WATRS", "GOA_CN", "GOA_CS", "GOA_WN", "GOA_WS"]
+    },
+    "Test": {
+      "tile_path": "test",
+      "datasets": [
+        "Caribbean 2 VFR Chart",
+        "Alaska Wall Planning Chart British Columbia Coast Inset",
+        "ENR_L23"
+      ]
     }
   }
 }
