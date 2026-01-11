@@ -5,14 +5,14 @@
  * Parent dispatches jobs to idle workers; workers signal completion.
  */
 
+#include <errno.h>
+#include <poll.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <signal.h>
 #include <sys/wait.h>
-#include <poll.h>
-#include <errno.h>
+#include <unistd.h>
 
 #include "jobqueue.h"
 
@@ -21,33 +21,31 @@
 
 /* ANSI escape codes for terminal control */
 #define ANSI_CLEAR_LINE "\033[K"
-#define ANSI_CURSOR_UP  "\033[A"
+#define ANSI_CURSOR_UP "\033[A"
 
 /* Message types for IPC */
 typedef struct {
-    int job_index;    /* Job index, or -1 for "shutdown" */
+    int job_index; /* Job index, or -1 for "shutdown" */
 } JobMessage;
 
 typedef struct {
-    int job_index;    /* Job that completed */
-    int status;       /* 0 = success, non-zero = failure */
+    int job_index; /* Job that completed */
+    int status;    /* 0 = success, non-zero = failure */
 } StatusMessage;
 
 /* Per-worker state */
 typedef struct {
     pid_t pid;
-    int to_worker[2];    /* Pipe: parent writes, worker reads */
-    int from_worker[2];  /* Pipe: worker writes, parent reads */
-    int current_job;     /* Job currently assigned, or -1 if idle */
-    bool active;         /* True if worker is running */
+    int to_worker[2];   /* Pipe: parent writes, worker reads */
+    int from_worker[2]; /* Pipe: worker writes, parent reads */
+    int current_job;    /* Job currently assigned, or -1 if idle */
+    bool active;        /* True if worker is running */
 } WorkerState;
 
 /*
  * Worker process main loop.
  */
-static void worker_loop(int worker_id,
-                        int read_fd, int write_fd,
-                        const JobQueueConfig *config) {
+static void worker_loop(int worker_id, int read_fd, int write_fd, const JobQueueConfig *config) {
     /* Initialize worker resources */
     if (config->worker_init) {
         if (config->worker_init(worker_id, config->init_data) != 0) {
@@ -93,7 +91,7 @@ static void worker_loop(int worker_id,
  * Send a job to a worker.
  */
 static int send_job(WorkerState *worker, int job_index) {
-    JobMessage msg = { .job_index = job_index };
+    JobMessage msg = {.job_index = job_index};
     if (write(worker->to_worker[1], &msg, sizeof(msg)) != sizeof(msg)) {
         return -1;
     }
@@ -117,19 +115,15 @@ static int receive_status(WorkerState *worker, StatusMessage *status) {
  * Display progress: shows completion count and each worker's current job.
  * Uses ANSI codes to update in place.
  */
-static void display_progress(const JobQueueConfig *config,
-                             const WorkerState *workers,
-                             int num_workers,
-                             int jobs_completed,
-                             int prev_lines) {
+static void display_progress(const JobQueueConfig *config, const WorkerState *workers, int num_workers,
+                             int jobs_completed, int prev_lines) {
     /* Move cursor up to overwrite previous display */
     for (int i = 0; i < prev_lines; i++) {
         fprintf(stderr, ANSI_CURSOR_UP);
     }
 
     /* Show overall progress */
-    fprintf(stderr, "Processing: %d/%d complete" ANSI_CLEAR_LINE "\n",
-            jobs_completed, config->num_jobs);
+    fprintf(stderr, "Processing: %d/%d complete" ANSI_CLEAR_LINE "\n", jobs_completed, config->num_jobs);
 
     /* Show each worker's status */
     for (int i = 0; i < num_workers; i++) {
@@ -239,8 +233,8 @@ int jobqueue_run(const JobQueueConfig *config, JobQueueResult *result) {
     }
 
     /* Job queue state */
-    int next_job = 0;                /* Next job to assign */
-    int jobs_completed = 0;          /* Total completed (success + failure) */
+    int next_job = 0;       /* Next job to assign */
+    int jobs_completed = 0; /* Total completed (success + failure) */
     int jobs_succeeded = 0;
     int jobs_failed = 0;
 
@@ -353,11 +347,10 @@ int jobqueue_run(const JobQueueConfig *config, JobQueueResult *result) {
         result->failed = jobs_failed;
     }
 
-cleanup:
-    ; /* Empty statement required before declaration after label */
+cleanup:; /* Empty statement required before declaration after label */
 
     /* Shutdown all workers */
-    JobMessage shutdown_msg = { .job_index = -1 };
+    JobMessage shutdown_msg = {.job_index = -1};
     for (int i = 0; i < num_workers; i++) {
         if (workers[i].pid > 0) {
             /* Send shutdown message (ignore errors during cleanup) */

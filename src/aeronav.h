@@ -8,6 +8,7 @@
 #define AERONAV_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
 /* ============================================================================
  * Constants
@@ -51,13 +52,13 @@ typedef struct {
 
 /* Polygon mask (outer ring + optional holes) */
 typedef struct {
-    Ring *rings;      /* First ring is outer boundary (CCW), rest are holes (CW) */
+    Ring *rings; /* First ring is outer boundary (CCW), rest are holes (CW) */
     int count;
 } Mask;
 
 /* Geographic bounds for post-projection clipping */
 typedef struct {
-    double lon_min;   /* Use NAN for no constraint */
+    double lon_min; /* Use NAN for no constraint */
     double lat_min;
     double lon_max;
     double lat_max;
@@ -65,42 +66,42 @@ typedef struct {
 
 /* Dataset definition */
 typedef struct {
-    char *name;           /* Dataset name (e.g., "Seattle SEC") */
-    char *zip_file;       /* ZIP filename without .zip (e.g., "Seattle") */
-    char *input_file;     /* TIF filename inside ZIP, or NULL to use name.tif */
-    char *tmp_file;       /* Temp filename (e.g., "_Seattle_SEC.tif") */
-    Mask *mask;           /* Pixel-space mask, or NULL */
-    GeoBounds *geobound;  /* Geographic clip bounds, or NULL */
-    GCP *gcps;            /* Ground control points, or NULL */
-    int max_lod;          /* Max level of detail (determines resolution) */
+    char *name;          /* Dataset name (e.g., "Seattle SEC") */
+    char *zip_file;      /* ZIP filename without .zip (e.g., "Seattle") */
+    char *input_file;    /* TIF filename inside ZIP, or NULL to use name.tif */
+    char *tmp_file;      /* Temp filename (e.g., "_Seattle_SEC.tif") */
+    Mask *mask;          /* Pixel-space mask, or NULL */
+    GeoBounds *geobound; /* Geographic clip bounds, or NULL */
+    GCP *gcps;           /* Ground control points, or NULL */
+    int max_lod;         /* Max level of detail (determines resolution) */
 } Dataset;
 
 /* Tileset definition */
 typedef struct {
     char *name;           /* Tileset name (e.g., "VFR Sectional Charts") */
     char *tile_path;      /* Output subdirectory (e.g., "sec") */
-    int zoom_min;               /* Minimum zoom level */
-    int zoom_max;               /* Maximum zoom level */
+    int zoom_min;         /* Minimum zoom level */
+    int zoom_max;         /* Maximum zoom level */
     char **datasets;      /* Array of dataset names */
-    int dataset_count;          /* Number of datasets */
+    size_t dataset_count; /* Number of datasets */
 } Tileset;
 
 /* Command-line options */
 typedef struct {
-    const char *zippath;        /* Directory containing ZIP files */
-    const char *outpath;        /* Output directory for tiles */
-    const char *tmppath;        /* Temporary directory */
-    const char *format;         /* Tile format: png, jpeg, webp */
-    const char *reproject_resampling;  /* Resampling for reprojection */
-    const char *tile_resampling;       /* Resampling for tile generation */
-    const char **tilesets;      /* Specific tilesets to process, or NULL for all */
+    const char *zippath;              /* Directory containing ZIP files */
+    const char *outpath;              /* Output directory for tiles */
+    const char *tmppath;              /* Temporary directory */
+    const char *format;               /* Tile format: png, jpeg, webp */
+    const char *reproject_resampling; /* Resampling for reprojection */
+    const char *tile_resampling;      /* Resampling for tile generation */
+    const char **tilesets;            /* Specific tilesets to process, or NULL for all */
     int tileset_count;
-    int jobs;                   /* Concurrent dataset processes */
-    int tile_workers;           /* Tile generation workers */
-    int epsg;                   /* Target EPSG code (default 3857) */
-    bool quiet;                 /* Suppress output */
-    bool cleanup;               /* Remove tmppath after processing */
-    bool tile_only;             /* Skip processing, use existing reprojected files */
+    int jobs;         /* Concurrent dataset processes */
+    int tile_workers; /* Tile generation workers */
+    int epsg;         /* Target EPSG code (default 3857) */
+    bool quiet;       /* Suppress output */
+    bool cleanup;     /* Remove tmppath after processing */
+    bool tile_only;   /* Skip processing, use existing reprojected files */
 } Options;
 
 /* ============================================================================
@@ -131,16 +132,8 @@ const char **get_all_tileset_names(int *count);
  *
  * Returns 0 on success (all jobs completed), -1 on error.
  */
-int process_datasets_parallel(
-    const Tileset **tilesets,
-    int tileset_count,
-    const char *zippath,
-    const char *tmppath,
-    int num_workers,
-    int threads_per_job,
-    int epsg,
-    const char *resampling
-);
+int process_datasets_parallel(const Tileset **tilesets, int tileset_count, const char *zippath, const char *tmppath,
+                              int num_workers, int threads_per_job, int epsg, const char *resampling);
 
 /* ============================================================================
  * Tile Generation (tiling.c)
@@ -159,15 +152,8 @@ double resolution_for_zoom(int zoom);
  *
  * Returns 0 on success, -1 on error.
  */
-int generate_tileset_tiles_parallel(
-    const Tileset **tilesets,
-    int tileset_count,
-    const char *tmppath,
-    const char *outpath,
-    const char *format,
-    const char *resampling,
-    int num_workers
-);
+int generate_tileset_tiles_parallel(const Tileset **tilesets, int tileset_count, const char *tmppath,
+                                    const char *outpath, const char *format, const char *resampling, int num_workers);
 
 /* ============================================================================
  * Utility Functions

@@ -20,6 +20,8 @@
   THE SOFTWARE.
 */
 
+/* clang-format off */
+
 /* cJSON */
 /* JSON parser in C. */
 

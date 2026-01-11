@@ -5,27 +5,27 @@
  * Uses the GlobalMercator scheme (EPSG:3857).
  */
 
+#include <dirent.h>
+#include <errno.h>
+#include <math.h>
+#include <signal.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
-#include <dirent.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
-#include <sys/mman.h>
 #include <unistd.h>
-#include <signal.h>
-#include <errno.h>
-#include <stdatomic.h>
 
+#include <cpl_conv.h>
 #include <gdal.h>
 #include <gdal_utils.h>
-#include <cpl_conv.h>
 
 #include "aeronav.h"
 
 /* Standard web map tile size in pixels */
-#define TILE_SIZE 256
+#define TILE_SIZE ((size_t)256)
 
 /* Half-width of EPSG:3857 (Web Mercator) in meters: π × Earth radius.
  * The full map extent is -ORIGIN_SHIFT to +ORIGIN_SHIFT on both axes. */
@@ -74,7 +74,7 @@ static int build_zoom_vrt(const Tileset *tileset, int zoom, const char *tmppath,
     }
 
     int entry_count = 0;
-    for (int d = 0; d < tileset->dataset_count; d++) {
+    for (size_t d = 0; d < tileset->dataset_count; d++) {
         const Dataset *dataset = get_dataset(tileset->datasets[d]);
         if (!dataset) continue;
 
@@ -128,14 +128,7 @@ static int build_zoom_vrt(const Tileset *tileset, int zoom, const char *tmppath,
     }
 
     int error_flag = 0;
-    GDALDatasetH vrt = GDALBuildVRT(
-        vrt_path_out,
-        entry_count,
-        NULL,
-        sorted_files,
-        vrt_options,
-        &error_flag
-    );
+    GDALDatasetH vrt = GDALBuildVRT(vrt_path_out, entry_count, NULL, sorted_files, vrt_options, &error_flag);
 
     GDALBuildVRTOptionsFree(vrt_options);
     free(sorted_files);
@@ -159,18 +152,18 @@ static int build_zoom_vrt(const Tileset *tileset, int zoom, const char *tmppath,
  * ============================================================================ */
 
 /* Packed tile coordinate for efficient storage and binary search */
-typedef unsigned int PackedTile;  /* x in upper 16 bits, y in lower 16 bits */
+typedef unsigned int PackedTile; /* x in upper 16 bits, y in lower 16 bits */
 
 /* Tiles for a single zoom level */
 typedef struct {
-    PackedTile *tiles;  /* Sorted array for binary search */
+    PackedTile *tiles; /* Sorted array for binary search */
     int count;
     int capacity;
 } ZoomTileSet;
 
 /* Complete manifest for a tileset */
 typedef struct {
-    ZoomTileSet *zooms;  /* Array indexed by (zoom - min_zoom) */
+    ZoomTileSet *zooms; /* Array indexed by (zoom - min_zoom) */
     int min_zoom;
     int max_zoom;
 } TileManifest;
@@ -221,8 +214,8 @@ static int add_tile(ZoomTileSet *zts, int x, int y) {
 }
 
 /* Add all tiles covering a bounding box to a zoom level */
-static int add_tiles_for_bounds(ZoomTileSet *zts, double lon_min, double lat_min,
-                                 double lon_max, double lat_max, int zoom) {
+static int add_tiles_for_bounds(ZoomTileSet *zts, double lon_min, double lat_min, double lon_max, double lat_max,
+                                int zoom) {
     /* Clamp to valid ranges */
     if (lon_min < -180) lon_min = -180;
     if (lon_max > 180) lon_max = 180;
@@ -232,8 +225,7 @@ static int add_tiles_for_bounds(ZoomTileSet *zts, double lon_min, double lat_min
     /* Handle antimeridian crossing */
     if (lon_min > lon_max) {
         /* Split into two ranges */
-        if (add_tiles_for_bounds(zts, lon_min, lat_min, 180, lat_max, zoom) < 0)
-            return -1;
+        if (add_tiles_for_bounds(zts, lon_min, lat_min, 180, lat_max, zoom) < 0) return -1;
         return add_tiles_for_bounds(zts, -180, lat_min, lon_max, lat_max, zoom);
     }
 
@@ -252,9 +244,7 @@ static int add_tiles_for_bounds(ZoomTileSet *zts, double lon_min, double lat_min
 }
 
 /* Read geographic bounds from a reprojected TIF file (EPSG:3857 -> EPSG:4326) */
-static int bounds_from_tif(const char *filepath,
-                            double *lon_min, double *lat_min,
-                            double *lon_max, double *lat_max) {
+static int bounds_from_tif(const char *filepath, double *lon_min, double *lat_min, double *lon_max, double *lat_max) {
     GDALDatasetH ds = GDALOpen(filepath, GA_ReadOnly);
     if (!ds) return -1;
 
@@ -272,7 +262,7 @@ static int bounds_from_tif(const char *filepath,
     double mx_min = gt[0];
     double mx_max = gt[0] + width * gt[1];
     double my_max = gt[3];
-    double my_min = gt[3] + height * gt[5];  /* gt[5] is negative */
+    double my_min = gt[3] + height * gt[5]; /* gt[5] is negative */
 
     /* Convert EPSG:3857 to EPSG:4326 */
     *lon_min = mx_min * 180.0 / ORIGIN_SHIFT;
@@ -329,7 +319,7 @@ static TileManifest *build_tile_manifest(const Tileset *tileset, const char *tmp
     }
 
     /* Process each dataset in the tileset */
-    for (int d = 0; d < tileset->dataset_count; d++) {
+    for (size_t d = 0; d < tileset->dataset_count; d++) {
         const char *dataset_name = tileset->datasets[d];
         const Dataset *dataset = get_dataset(dataset_name);
         if (!dataset) continue;
@@ -384,7 +374,7 @@ static GDALRIOResampleAlg parse_resampling(const char *resampling) {
     if (strcmp(resampling, "lanczos") == 0) return GRIORA_Lanczos;
     if (strcmp(resampling, "average") == 0) return GRIORA_Average;
     if (strcmp(resampling, "mode") == 0) return GRIORA_Mode;
-    return GRIORA_Bilinear;  /* Default */
+    return GRIORA_Bilinear; /* Default */
 }
 
 /* ============================================================================
@@ -395,16 +385,14 @@ double resolution_for_zoom(int zoom) {
     /* Resolution in meters/pixel at given zoom level */
     /* At zoom 0, the world is 256 pixels, at zoom n, it's 256 * 2^n pixels */
     /* World circumference at equator = 2 * pi * 6378137 meters */
-    double world_size = 2 * ORIGIN_SHIFT;  /* Full extent in meters */
+    double world_size = 2 * ORIGIN_SHIFT; /* Full extent in meters */
     double tile_count = pow(2, zoom);
     return world_size / (tile_count * TILE_SIZE);
 }
 
-static void tile_bounds(int z, int x, int y,
-                        double *min_x, double *min_y,
-                        double *max_x, double *max_y) {
+static void tile_bounds(int z, int x, int y, double *min_x, double *min_y, double *max_x, double *max_y) {
     /* Get the bounds of a tile in EPSG:3857 coordinates */
-    double res = resolution_for_zoom(z) * TILE_SIZE;  /* Tile size in meters */
+    double res = resolution_for_zoom(z) * TILE_SIZE; /* Tile size in meters */
 
     *min_x = -ORIGIN_SHIFT + x * res;
     *max_x = -ORIGIN_SHIFT + (x + 1) * res;
@@ -431,18 +419,14 @@ typedef struct {
  * Tile Generation from Source Raster
  * ============================================================================ */
 
-static int generate_base_tile(GDALDatasetH ds,
-                         int z, int x, int y,
-                         const char *outpath,
-                         const char *tile_path,
-                         const char *format,
-                         GDALRIOResampleAlg resample_alg) {
+static int generate_base_tile(GDALDatasetH ds, int z, int x, int y, const char *outpath, const char *tile_path,
+                              const char *format, GDALRIOResampleAlg resample_alg) {
     /* Skip if tile already exists */
     char file_path[PATH_SIZE];
     snprintf(file_path, sizeof(file_path), "%s/%s/%d/%d/%d.%s", outpath, tile_path, z, x, y, format);
     struct stat st;
     if (stat(file_path, &st) == 0) {
-        return 2;  /* Skipped - already exists */
+        return 2; /* Skipped - already exists */
     }
 
     /* Get tile bounds in EPSG:3857 */
@@ -462,17 +446,16 @@ static int generate_base_tile(GDALDatasetH ds,
     double ds_min_x = gt[0];
     double ds_max_x = gt[0] + ds_width * gt[1];
     double ds_max_y = gt[3];
-    double ds_min_y = gt[3] + ds_height * gt[5];  /* gt[5] is negative */
+    double ds_min_y = gt[3] + ds_height * gt[5]; /* gt[5] is negative */
 
     /* Check if tile intersects dataset */
-    if (tile_max_x <= ds_min_x || tile_min_x >= ds_max_x ||
-        tile_max_y <= ds_min_y || tile_min_y >= ds_max_y) {
-        return 1;  /* Skip - no intersection */
+    if (tile_max_x <= ds_min_x || tile_min_x >= ds_max_x || tile_max_y <= ds_min_y || tile_min_y >= ds_max_y) {
+        return 1; /* Skip - no intersection */
     }
 
     /* Calculate pixel coordinates in source dataset */
     double src_x0 = (tile_min_x - gt[0]) / gt[1];
-    double src_y0 = (tile_max_y - gt[3]) / gt[5];  /* Note: gt[5] is negative */
+    double src_y0 = (tile_max_y - gt[3]) / gt[5]; /* Note: gt[5] is negative */
     double src_x1 = (tile_max_x - gt[0]) / gt[1];
     double src_y1 = (tile_min_y - gt[3]) / gt[5];
 
@@ -488,7 +471,7 @@ static int generate_base_tile(GDALDatasetH ds,
     int read_h = (int)(src_y1 - src_y0 + 0.5);
 
     if (read_w <= 0 || read_h <= 0) {
-        return 1;  /* Skip - empty read region */
+        return 1; /* Skip - empty read region */
     }
 
     /* Calculate where in the tile this data goes */
@@ -511,7 +494,7 @@ static int generate_base_tile(GDALDatasetH ds,
     }
 
     if (tile_w <= 0 || tile_h <= 0) {
-        return 1;  /* Skip */
+        return 1; /* Skip */
     }
 
     /* Allocate tile buffer */
@@ -538,12 +521,17 @@ static int generate_base_tile(GDALDatasetH ds,
     extra_arg.eResampleAlg = resample_alg;
 
     for (int b = 0; b < 4; b++) {
-        int src_band = (b < 3) ? b + 1 : (band_count >= 4 ? 4 : 0);
+        int src_band;
+        if (b < 3) {
+            src_band = b + 1; /* RGB: bands 1-3 */
+        } else {
+            src_band = (band_count >= 4) ? 4 : 0; /* Alpha: band 4 if available */
+        }
 
         if (src_band > 0) {
             GDALRasterBandH band = GDALGetRasterBand(ds, src_band);
-            if (GDALRasterIOEx(band, GF_Read, read_x, read_y, read_w, read_h,
-                               band_buf, tile_w, tile_h, GDT_Byte, 0, 0, &extra_arg) != CE_None) {
+            if (GDALRasterIOEx(band, GF_Read, read_x, read_y, read_w, read_h, band_buf, tile_w, tile_h, GDT_Byte, 0, 0,
+                               &extra_arg) != CE_None) {
                 error("GDALRasterIOEx read failed for band %d", src_band);
                 free(tile_data);
                 return -1;
@@ -569,7 +557,7 @@ static int generate_base_tile(GDALDatasetH ds,
 
     /* Check if tile is empty (all transparent) */
     int is_empty = 1;
-    for (int i = 3; i < TILE_SIZE * TILE_SIZE * 4; i += 4) {
+    for (size_t i = 3; i < TILE_SIZE * TILE_SIZE * 4; i += 4) {
         if (tile_data[i] != 0) {
             is_empty = 0;
             break;
@@ -578,7 +566,7 @@ static int generate_base_tile(GDALDatasetH ds,
 
     if (is_empty) {
         free(tile_data);
-        return 1;  /* Skip empty tile */
+        return 1; /* Skip empty tile */
     }
 
     /* Create output directory */
@@ -609,17 +597,17 @@ static int generate_base_tile(GDALDatasetH ds,
 
     /* Write tile data to MEM dataset */
     unsigned char band_data[TILE_SIZE * TILE_SIZE];
-    GDALColorInterp interp[] = { GCI_RedBand, GCI_GreenBand, GCI_BlueBand, GCI_AlphaBand };
+    GDALColorInterp interp[] = {GCI_RedBand, GCI_GreenBand, GCI_BlueBand, GCI_AlphaBand};
 
     for (int b = 0; b < 4; b++) {
         GDALRasterBandH band = GDALGetRasterBand(mem_ds, b + 1);
 
-        for (int i = 0; i < TILE_SIZE * TILE_SIZE; i++) {
+        for (size_t i = 0; i < TILE_SIZE * TILE_SIZE; i++) {
             band_data[i] = tile_data[i * 4 + b];
         }
 
-        if (GDALRasterIO(band, GF_Write, 0, 0, TILE_SIZE, TILE_SIZE,
-                         band_data, TILE_SIZE, TILE_SIZE, GDT_Byte, 0, 0) != CE_None) {
+        if (GDALRasterIO(band, GF_Write, 0, 0, TILE_SIZE, TILE_SIZE, band_data, TILE_SIZE, TILE_SIZE, GDT_Byte, 0, 0) !=
+            CE_None) {
             error("GDALRasterIO write failed for band %d", b + 1);
             GDALClose(mem_ds);
             free(tile_data);
@@ -655,15 +643,8 @@ static int generate_base_tile(GDALDatasetH ds,
 /* Maximum parallel workers for tile generation */
 #define MAX_TILE_WORKERS 64
 
-int generate_tileset_tiles_parallel(
-    const Tileset **tilesets,
-    int tileset_count,
-    const char *tmppath,
-    const char *outpath,
-    const char *format,
-    const char *resampling,
-    int num_workers
-) {
+int generate_tileset_tiles_parallel(const Tileset **tilesets, int tileset_count, const char *tmppath,
+                                    const char *outpath, const char *format, const char *resampling, int num_workers) {
     /* Initialize GDAL in parent (needed for manifest/VRT building) */
     GDALAllRegister();
 
@@ -693,7 +674,7 @@ int generate_tileset_tiles_parallel(
         info("  Building zoom-specific VRTs for zoom %d to %d", zoom_min, zoom_max);
         for (int z = zoom_min; z <= zoom_max; z++) {
             ZoomTileSet *zts = &manifest->zooms[z - zoom_min];
-            vrt_paths[z][0] = '\0';  /* Mark as invalid initially */
+            vrt_paths[z][0] = '\0'; /* Mark as invalid initially */
 
             if (zts->count == 0) continue;
 
@@ -724,14 +705,14 @@ int generate_tileset_tiles_parallel(
 
         int tile_idx = 0;
         for (int z = zoom_min; z <= zoom_max; z++) {
-            if (vrt_paths[z][0] == '\0') continue;  /* Skip zoom levels without VRT */
+            if (vrt_paths[z][0] == '\0') continue; /* Skip zoom levels without VRT */
 
             ZoomTileSet *zts = &manifest->zooms[z - zoom_min];
             for (int i = 0; i < zts->count; i++) {
                 PackedTile pt = zts->tiles[i];
                 tiles[tile_idx].z = z;
-                tiles[tile_idx].x = (pt >> 16) & 0xFFFF;
-                tiles[tile_idx].y = pt & 0xFFFF;
+                tiles[tile_idx].x = (int)((pt >> 16) & 0xFFFF);
+                tiles[tile_idx].y = (int)(pt & 0xFFFF);
                 tile_idx++;
             }
         }
@@ -746,9 +727,8 @@ int generate_tileset_tiles_parallel(
         }
 
         /* Create shared atomic counter for dynamic work distribution */
-        atomic_int *next_tile = mmap(NULL, sizeof(atomic_int),
-                                     PROT_READ | PROT_WRITE,
-                                     MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+        atomic_int *next_tile =
+            mmap(NULL, sizeof(atomic_int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
         if (next_tile == MAP_FAILED) {
             error("Failed to create shared memory for tile counter");
             free(tiles);
@@ -776,7 +756,7 @@ int generate_tileset_tiles_parallel(
             if (pid == 0) {
                 /* Child process - initialize GDAL and limit cache */
                 GDALAllRegister();
-                GDALSetCacheMax64(32 * 1024 * 1024);  /* 32 MB absolute limit */
+                GDALSetCacheMax64(32LL * 1024 * 1024); /* 32 MB absolute limit */
                 CPLSetConfigOption("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR");
 
                 /* Cache of open VRT handles by zoom level (opened lazily) */
@@ -802,9 +782,8 @@ int generate_tileset_tiles_parallel(
                         }
                     }
 
-                    generate_base_tile(vrt_cache[z], tiles[i].z, tiles[i].x, tiles[i].y,
-                                       outpath, tileset->tile_path, format,
-                                       resample_alg);
+                    generate_base_tile(vrt_cache[z], tiles[i].z, tiles[i].x, tiles[i].y, outpath, tileset->tile_path,
+                                       format, resample_alg);
                 }
 
                 /* Close all cached VRTs */

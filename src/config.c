@@ -2,10 +2,11 @@
  * config.c - Load dataset and tileset definitions from datasets.json
  */
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
+
 #include "aeronav.h"
 #include "cJSON.h"
 
@@ -26,7 +27,7 @@ static char *strdup_safe(const char *s) {
 
 /* Helper to create tmp_file name from dataset name */
 static char *make_tmp_file(const char *name) {
-    size_t len = strlen(name) + 6;  /* "_" + name + ".tif" + null */
+    size_t len = strlen(name) + 6; /* "_" + name + ".tif" + null */
     char *tmp = malloc(len);
     if (!tmp) return NULL;
     snprintf(tmp, len, "_%s.tif", name);
@@ -262,7 +263,7 @@ static int load_config(const char *config_path) {
             return -1;
         }
 
-        int j = 0;
+        size_t j = 0;
         cJSON *ds_name;
         cJSON_ArrayForEach(ds_name, ds_array) {
             ts->datasets[j++] = strdup_safe(cJSON_GetStringValue(ds_name));
@@ -275,13 +276,13 @@ static int load_config(const char *config_path) {
     for (i = 0; i < g_tileset_count; i++) {
         Tileset *ts = &g_tilesets[i];
         int max_lod = 0;
-        for (int j = 0; j < ts->dataset_count; j++) {
+        for (size_t j = 0; j < ts->dataset_count; j++) {
             const Dataset *ds = get_dataset(ts->datasets[j]);
             if (ds && ds->max_lod > max_lod) {
                 max_lod = ds->max_lod;
             }
         }
-        ts->zoom_max = max_lod > 0 ? max_lod : 12;  /* Default to 12 if no max_lod found */
+        ts->zoom_max = max_lod > 0 ? max_lod : 12; /* Default to 12 if no max_lod found */
     }
 
     cJSON_Delete(root);
@@ -307,8 +308,7 @@ const Dataset *get_dataset(const char *name) {
 
 const Tileset *get_tileset(const char *name) {
     for (int i = 0; i < g_tileset_count; i++) {
-        if (strcmp(g_tilesets[i].name, name) == 0 ||
-            strcmp(g_tilesets[i].tile_path, name) == 0) {
+        if (strcmp(g_tilesets[i].name, name) == 0 || strcmp(g_tilesets[i].tile_path, name) == 0) {
             return &g_tilesets[i];
         }
     }

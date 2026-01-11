@@ -20,6 +20,8 @@
   THE SOFTWARE.
 */
 
+/* clang-format off */
+
 #ifndef cJSON__h
 #define cJSON__h
 

@@ -29,7 +29,12 @@ SRCDIR = src
 TILES_SRCS = aeronav2tiles.c config.c processing.c tiling.c jobqueue.c cJSON.c
 TILES_OBJS = $(addprefix $(SRCDIR)/, $(TILES_SRCS:.c=.o))
 
-.PHONY: all release debug clean
+# Source files for linting/formatting (exclude vendored cJSON)
+LINT_SRCS = $(SRCDIR)/aeronav2tiles.c $(SRCDIR)/config.c $(SRCDIR)/processing.c \
+            $(SRCDIR)/tiling.c $(SRCDIR)/jobqueue.c $(SRCDIR)/aeronav_download.c
+LINT_HDRS = $(SRCDIR)/aeronav.h $(SRCDIR)/jobqueue.h
+
+.PHONY: all release debug clean tidy format
 
 all: release
 
@@ -69,3 +74,11 @@ $(SRCDIR)/aeronav2tiles.o: $(SRCDIR)/aeronav.h
 $(SRCDIR)/config.o: $(SRCDIR)/aeronav.h $(SRCDIR)/cJSON.h
 $(SRCDIR)/processing.o: $(SRCDIR)/aeronav.h $(SRCDIR)/jobqueue.h
 $(SRCDIR)/tiling.o: $(SRCDIR)/aeronav.h
+
+# Run clang-tidy on all source files (excludes vendored cJSON)
+tidy:
+	echo $(LINT_SRCS) | xargs -n1 | xargs -P$(shell nproc) -I{} clang-tidy {} -- $(GDAL_CFLAGS) $(CURL_CFLAGS) $(XML2_CFLAGS)
+
+# Run clang-format on all source and header files (excludes vendored cJSON)
+format:
+	echo $(LINT_SRCS) $(LINT_HDRS) | xargs -n1 | xargs -P$(shell nproc) clang-format -i

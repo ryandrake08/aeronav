@@ -11,17 +11,17 @@
  * 7. Save to file and build overviews
  */
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 
-#include <gdal.h>
-#include <gdal_utils.h>
-#include <gdal_alg.h>
-#include <ogr_srs_api.h>
 #include <cpl_conv.h>
 #include <cpl_string.h>
+#include <gdal.h>
+#include <gdal_alg.h>
+#include <gdal_utils.h>
+#include <ogr_srs_api.h>
 
 #include "aeronav.h"
 #include "jobqueue.h"
@@ -31,10 +31,8 @@
  * offset_x/offset_y are subtracted from vertex coordinates (for windowed images).
  * Returns 1 if valid bbox found, 0 if no mask or empty.
  */
-static int get_mask_bbox(const Mask *mask, int src_width, int src_height,
-                         int offset_x, int offset_y,
-                         int *out_min_x, int *out_min_y,
-                         int *out_width, int *out_height) {
+static int get_mask_bbox(const Mask *mask, int src_width, int src_height, int offset_x, int offset_y, int *out_min_x,
+                         int *out_min_y, int *out_width, int *out_height) {
     if (!mask || mask->count == 0) {
         return 0;
     }
@@ -83,11 +81,10 @@ static int get_mask_bbox(const Mask *mask, int src_width, int src_height,
  * Reads from src at (src_x, src_y) and writes to dst at (0, 0).
  * Returns 0 on success, -1 on error.
  */
-static int copy_bands(GDALDatasetH src, GDALDatasetH dst,
-                      int src_x, int src_y, int width, int height) {
+static int copy_bands(GDALDatasetH src, GDALDatasetH dst, int src_x, int src_y, int width, int height) {
     int band_count = GDALGetRasterCount(src);
 
-    unsigned char *band_data = malloc(width * height);
+    unsigned char *band_data = malloc((size_t)width * height);
     if (!band_data) {
         error("Failed to allocate band buffer");
         return -1;
@@ -97,14 +94,14 @@ static int copy_bands(GDALDatasetH src, GDALDatasetH dst,
         GDALRasterBandH src_band = GDALGetRasterBand(src, i);
         GDALRasterBandH dst_band = GDALGetRasterBand(dst, i);
 
-        if (GDALRasterIO(src_band, GF_Read, src_x, src_y, width, height,
-                         band_data, width, height, GDT_Byte, 0, 0) != CE_None) {
+        if (GDALRasterIO(src_band, GF_Read, src_x, src_y, width, height, band_data, width, height, GDT_Byte, 0, 0) !=
+            CE_None) {
             error("Failed to read source band %d", i);
             free(band_data);
             return -1;
         }
-        if (GDALRasterIO(dst_band, GF_Write, 0, 0, width, height,
-                         band_data, width, height, GDT_Byte, 0, 0) != CE_None) {
+        if (GDALRasterIO(dst_band, GF_Write, 0, 0, width, height, band_data, width, height, GDT_Byte, 0, 0) !=
+            CE_None) {
             error("Failed to write destination band %d", i);
             free(band_data);
             return -1;
@@ -124,8 +121,7 @@ static int copy_bands(GDALDatasetH src, GDALDatasetH dst,
  * Sets *out to new dataset if expansion was performed, NULL if no-op.
  * Sets *win_offset_x and *win_offset_y to the window offset if srcwin was used.
  */
-static int expand_to_rgb(GDALDatasetH src, const Mask *mask, GDALDatasetH *out,
-                         int *win_offset_x, int *win_offset_y) {
+static int expand_to_rgb(GDALDatasetH src, const Mask *mask, GDALDatasetH *out, int *win_offset_x, int *win_offset_y) {
     if (!out) {
         error("expand_to_rgb: NULL output parameter");
         return -1;
@@ -155,12 +151,9 @@ static int expand_to_rgb(GDALDatasetH src, const Mask *mask, GDALDatasetH *out,
 
     /* If mask provided, add -srcwin to only expand the needed window */
     int bbox_min_x, bbox_min_y, bbox_width, bbox_height;
-    int has_bbox = get_mask_bbox(mask,
-                                 GDALGetRasterXSize(src),
-                                 GDALGetRasterYSize(src),
-                                 0, 0,  /* No offset for original image */
-                                 &bbox_min_x, &bbox_min_y,
-                                 &bbox_width, &bbox_height);
+    int has_bbox =
+        get_mask_bbox(mask, GDALGetRasterXSize(src), GDALGetRasterYSize(src), 0, 0, /* No offset for original image */
+                      &bbox_min_x, &bbox_min_y, &bbox_width, &bbox_height);
 
     if (has_bbox) {
         char buf[64];
@@ -222,8 +215,7 @@ static int expand_to_rgb(GDALDatasetH src, const Mask *mask, GDALDatasetH *out,
  * Returns 0 on success, -1 on error.
  * Sets *out to new dataset if mask was applied, NULL if no-op.
  */
-static int apply_mask(GDALDatasetH src, const Mask *mask,
-                      int win_offset_x, int win_offset_y, GDALDatasetH *out,
+static int apply_mask(GDALDatasetH src, const Mask *mask, int win_offset_x, int win_offset_y, GDALDatasetH *out,
                       int *out_offset_x, int *out_offset_y) {
     if (!out) {
         error("apply_mask: NULL output parameter");
@@ -236,7 +228,7 @@ static int apply_mask(GDALDatasetH src, const Mask *mask,
     if (out_offset_y) *out_offset_y = win_offset_y;
 
     if (!mask || mask->count == 0) {
-        return 0;  /* No mask to apply */
+        return 0; /* No mask to apply */
     }
 
     int src_width = GDALGetRasterXSize(src);
@@ -245,9 +237,8 @@ static int apply_mask(GDALDatasetH src, const Mask *mask,
 
     /* Calculate mask bounding box, adjusted for any prior windowing */
     int min_x, min_y, window_width, window_height;
-    if (!get_mask_bbox(mask, src_width, src_height,
-                       win_offset_x, win_offset_y,
-                       &min_x, &min_y, &window_width, &window_height)) {
+    if (!get_mask_bbox(mask, src_width, src_height, win_offset_x, win_offset_y, &min_x, &min_y, &window_width,
+                       &window_height)) {
         error("Invalid mask bounding box");
         return -1;
     }
@@ -288,14 +279,14 @@ static int apply_mask(GDALDatasetH src, const Mask *mask,
     GDALSetRasterColorInterpretation(alpha_band, GCI_AlphaBand);
 
     /* Initialize alpha to 0 (transparent outside mask) */
-    unsigned char *alpha_data = calloc(window_width * window_height, 1);
+    unsigned char *alpha_data = calloc((size_t)window_width * window_height, 1);
     if (!alpha_data) {
         error("Failed to allocate alpha buffer");
         GDALClose(dst);
         return -1;
     }
-    if (GDALRasterIO(alpha_band, GF_Write, 0, 0, window_width, window_height,
-                     alpha_data, window_width, window_height, GDT_Byte, 0, 0) != CE_None) {
+    if (GDALRasterIO(alpha_band, GF_Write, 0, 0, window_width, window_height, alpha_data, window_width, window_height,
+                     GDT_Byte, 0, 0) != CE_None) {
         error("Failed to write alpha band");
         free(alpha_data);
         GDALClose(dst);
@@ -308,12 +299,12 @@ static int apply_mask(GDALDatasetH src, const Mask *mask,
     if (GDALGetGeoTransform(src, gt) == CE_None) {
         /* Adjust origin to window corner */
         double new_gt[6];
-        new_gt[0] = gt[0] + min_x * gt[1] + min_y * gt[2];  /* new X origin */
-        new_gt[1] = gt[1];  /* pixel width unchanged */
-        new_gt[2] = gt[2];  /* rotation unchanged */
-        new_gt[3] = gt[3] + min_x * gt[4] + min_y * gt[5];  /* new Y origin */
-        new_gt[4] = gt[4];  /* rotation unchanged */
-        new_gt[5] = gt[5];  /* pixel height unchanged */
+        new_gt[0] = gt[0] + min_x * gt[1] + min_y * gt[2]; /* new X origin */
+        new_gt[1] = gt[1];                                 /* pixel width unchanged */
+        new_gt[2] = gt[2];                                 /* rotation unchanged */
+        new_gt[3] = gt[3] + min_x * gt[4] + min_y * gt[5]; /* new Y origin */
+        new_gt[4] = gt[4];                                 /* rotation unchanged */
+        new_gt[5] = gt[5];                                 /* pixel height unchanged */
         GDALSetGeoTransform(dst, new_gt);
     }
     const char *proj = GDALGetProjectionRef(src);
@@ -351,29 +342,27 @@ static int apply_mask(GDALDatasetH src, const Mask *mask,
     /* Use GDALRasterizeGeometries to burn the mask into the alpha band.
      * Use pixel-space geotransform for rasterization.
      */
-    double pixel_gt[6] = { 0, 1, 0, 0, 0, 1 };  /* Identity: pixel coords = geo coords */
+    double pixel_gt[6] = {0, 1, 0, 0, 0, 1}; /* Identity: pixel coords = geo coords */
 
     /* Temporarily set pixel-space geotransform for rasterization */
     double saved_gt[6];
     GDALGetGeoTransform(dst, saved_gt);
     GDALSetGeoTransform(dst, pixel_gt);
 
-    int band_list[1] = { alpha_band_num };
-    double burn_value[1] = { 255.0 };  /* Opaque where mask covers */
-    OGRGeometryH geom_list[1] = { polygon };
+    int band_list[1] = {alpha_band_num};
+    double burn_value[1] = {255.0}; /* Opaque where mask covers */
+    OGRGeometryH geom_list[1] = {polygon};
 
-    CPLErr err = GDALRasterizeGeometries(
-        dst,
-        1,              /* nBandCount */
-        band_list,      /* panBandList */
-        1,              /* nGeomCount */
-        geom_list,      /* pahGeometries */
-        NULL,           /* pfnTransformer */
-        NULL,           /* pTransformArg */
-        burn_value,     /* padfGeomBurnValue */
-        NULL,           /* papszOptions */
-        NULL,           /* pfnProgress */
-        NULL            /* pProgressArg */
+    CPLErr err = GDALRasterizeGeometries(dst, 1,     /* nBandCount */
+                                         band_list,  /* panBandList */
+                                         1,          /* nGeomCount */
+                                         geom_list,  /* pahGeometries */
+                                         NULL,       /* pfnTransformer */
+                                         NULL,       /* pTransformArg */
+                                         burn_value, /* padfGeomBurnValue */
+                                         NULL,       /* papszOptions */
+                                         NULL,       /* pfnProgress */
+                                         NULL        /* pProgressArg */
     );
 
     /* Restore saved geotransform */
@@ -404,8 +393,7 @@ static int apply_mask(GDALDatasetH src, const Mask *mask,
  * Returns 0 on success, -1 on error.
  * Sets *out to new dataset if GCPs were applied, NULL if no-op.
  */
-static int apply_gcps(GDALDatasetH src, const GCP *gcps,
-                      int offset_x, int offset_y, GDALDatasetH *out) {
+static int apply_gcps(GDALDatasetH src, const GCP *gcps, int offset_x, int offset_y, GDALDatasetH *out) {
     if (!out) {
         error("apply_gcps: NULL output parameter");
         return -1;
@@ -413,7 +401,7 @@ static int apply_gcps(GDALDatasetH src, const GCP *gcps,
     *out = NULL;
 
     if (!gcps || gcps->count == 0) {
-        return 0;  /* No GCPs to apply */
+        return 0; /* No GCPs to apply */
     }
 
     int width = GDALGetRasterXSize(src);
@@ -544,8 +532,8 @@ static int apply_gcps(GDALDatasetH src, const GCP *gcps,
  * Returns 0 on success, -1 on error.
  * Always sets *out to new dataset on success (no no-op case).
  */
-static int warp_to_target(GDALDatasetH src, double resolution, int num_threads,
-                          int epsg, const char *resampling, GDALDatasetH *out) {
+static int warp_to_target(GDALDatasetH src, double resolution, int num_threads, int epsg, const char *resampling,
+                          GDALDatasetH *out) {
     if (!out) {
         error("warp_to_target: NULL output parameter");
         return -1;
@@ -591,7 +579,7 @@ static int warp_to_target(GDALDatasetH src, double resolution, int num_threads,
     }
 
     int err = 0;
-    GDALDatasetH src_array[1] = { src };
+    GDALDatasetH src_array[1] = {src};
     GDALDatasetH result = GDALWarp("", NULL, 1, src_array, warp_opts, &err);
     GDALWarpAppOptionsFree(warp_opts);
 
@@ -609,8 +597,7 @@ static int warp_to_target(GDALDatasetH src, double resolution, int num_threads,
  * Returns 0 on success, -1 on error.
  * Sets *out to new dataset if clipping was applied, NULL if no-op.
  */
-static int clip_to_bounds(GDALDatasetH src, const GeoBounds *bounds,
-                          int epsg, GDALDatasetH *out) {
+static int clip_to_bounds(GDALDatasetH src, const GeoBounds *bounds, int epsg, GDALDatasetH *out) {
     if (!out) {
         error("clip_to_bounds: NULL output parameter");
         return -1;
@@ -618,14 +605,14 @@ static int clip_to_bounds(GDALDatasetH src, const GeoBounds *bounds,
     *out = NULL;
 
     if (!bounds) {
-        return 0;  /* No bounds specified */
+        return 0; /* No bounds specified */
     }
 
     /* Check if any bounds are specified */
-    int has_bounds = !isnan(bounds->lon_min) || !isnan(bounds->lat_min) ||
-                     !isnan(bounds->lon_max) || !isnan(bounds->lat_max);
+    int has_bounds =
+        !isnan(bounds->lon_min) || !isnan(bounds->lat_min) || !isnan(bounds->lon_max) || !isnan(bounds->lat_max);
     if (!has_bounds) {
-        return 0;  /* No bounds specified */
+        return 0; /* No bounds specified */
     }
 
     /* Get source bounds in its CRS */
@@ -641,7 +628,7 @@ static int clip_to_bounds(GDALDatasetH src, const GeoBounds *bounds,
     double src_min_x = gt[0];
     double src_max_x = gt[0] + width * gt[1];
     double src_max_y = gt[3];
-    double src_min_y = gt[3] + height * gt[5];  /* gt[5] is negative */
+    double src_min_y = gt[3] + height * gt[5]; /* gt[5] is negative */
 
     /* Convert bounds from lat/lon to target EPSG */
     OGRSpatialReferenceH wgs84 = OSRNewSpatialReference(NULL);
@@ -718,9 +705,8 @@ static int clip_to_bounds(GDALDatasetH src, const GeoBounds *bounds,
     if (clip_max_y > src_max_y) clip_max_y = src_max_y;
 
     /* Check if clipping actually changes anything */
-    if (clip_min_x == src_min_x && clip_max_x == src_max_x &&
-        clip_min_y == src_min_y && clip_max_y == src_max_y) {
-        return 0;  /* No change needed */
+    if (clip_min_x == src_min_x && clip_max_x == src_max_x && clip_min_y == src_min_y && clip_max_y == src_max_y) {
+        return 0; /* No change needed */
     }
 
     /* Use GDALTranslate with -projwin */
@@ -789,8 +775,7 @@ static int save_with_overviews(GDALDatasetH ds, const char *outpath) {
     options = CSLSetNameValue(options, "TILED", "YES");
     options = CSLSetNameValue(options, "BIGTIFF", "IF_SAFER");
 
-    GDALDatasetH out = GDALCreate(gtiff_driver, outpath, width, height,
-                                   band_count, GDT_Byte, options);
+    GDALDatasetH out = GDALCreate(gtiff_driver, outpath, width, height, band_count, GDT_Byte, options);
     CSLDestroy(options);
 
     if (!out) {
@@ -821,8 +806,7 @@ static int save_with_overviews(GDALDatasetH ds, const char *outpath) {
     for (int i = 1; i <= band_count; i++) {
         GDALRasterBandH src_band = GDALGetRasterBand(ds, i);
         GDALRasterBandH dst_band = GDALGetRasterBand(out, i);
-        GDALSetRasterColorInterpretation(dst_band,
-            GDALGetRasterColorInterpretation(src_band));
+        GDALSetRasterColorInterpretation(dst_band, GDALGetRasterColorInterpretation(src_band));
     }
 
     /* Copy band data */
@@ -831,16 +815,14 @@ static int save_with_overviews(GDALDatasetH ds, const char *outpath) {
         GDALRasterBandH dst_band = GDALGetRasterBand(out, i);
 
         for (int y = 0; y < height; y++) {
-            if (GDALRasterIO(src_band, GF_Read, 0, y, width, 1,
-                             scanline, width, 1, GDT_Byte, 0, 0) != CE_None) {
+            if (GDALRasterIO(src_band, GF_Read, 0, y, width, 1, scanline, width, 1, GDT_Byte, 0, 0) != CE_None) {
                 error("Failed to read scanline %d of band %d", y, i);
                 free(scanline);
                 GDALClose(out);
                 return -1;
             }
 
-            if (GDALRasterIO(dst_band, GF_Write, 0, y, width, 1,
-                             scanline, width, 1, GDT_Byte, 0, 0) != CE_None) {
+            if (GDALRasterIO(dst_band, GF_Write, 0, y, width, 1, scanline, width, 1, GDT_Byte, 0, 0) != CE_None) {
                 error("Failed to write scanline %d of band %d", y, i);
                 free(scanline);
                 GDALClose(out);
@@ -859,15 +841,13 @@ static int save_with_overviews(GDALDatasetH ds, const char *outpath) {
     int levels[] = {2, 4, 8, 16, 32, 64};
     int num_levels = sizeof(levels) / sizeof(levels[0]);
 
-    CPLErr err = GDALBuildOverviews(
-        out,
-        "AVERAGE",      /* Resampling method - good for imagery */
-        num_levels,     /* Number of overview levels */
-        levels,         /* Overview decimation factors */
-        0,              /* Number of bands (0 = all bands) */
-        NULL,           /* Band list (NULL = all bands) */
-        NULL,           /* Progress function */
-        NULL            /* Progress data */
+    CPLErr err = GDALBuildOverviews(out, "AVERAGE", /* Resampling method - good for imagery */
+                                    num_levels,     /* Number of overview levels */
+                                    levels,         /* Overview decimation factors */
+                                    0,              /* Number of bands (0 = all bands) */
+                                    NULL,           /* Band list (NULL = all bands) */
+                                    NULL,           /* Progress function */
+                                    NULL            /* Progress data */
     );
 
     GDALClose(out);
@@ -949,17 +929,11 @@ static double get_center_latitude_from_dataset(GDALDatasetH ds) {
     return lat * M_PI / 180.0;
 }
 
-static int process_dataset(const char *zippath,
-                           const Dataset *dataset,
-                           double resolution,
-                           const char *outpath,
-                           int num_threads,
-                           int epsg,
-                           const char *resampling) {
+static int process_dataset(const char *zippath, const Dataset *dataset, double resolution, const char *outpath,
+                           int num_threads, int epsg, const char *resampling) {
     /* Build vsizip path: /vsizip/zippath/name.zip/input_file */
     char vsi_path[PATH_SIZE];
-    snprintf(vsi_path, sizeof(vsi_path), "/vsizip/%s/%s.zip/%s",
-             zippath, dataset->zip_file, dataset->input_file);
+    snprintf(vsi_path, sizeof(vsi_path), "/vsizip/%s/%s.zip/%s", zippath, dataset->zip_file, dataset->input_file);
 
     /* Open the dataset */
     GDALDatasetH src = GDALOpen(vsi_path, GA_ReadOnly);
@@ -984,8 +958,8 @@ static int process_dataset(const char *zippath,
 
     /* Step 2: Apply pixel-space mask.
      * Captures cumulative offset for GCP coordinate adjustment. */
-    if (apply_mask(src, dataset->mask, win_offset_x, win_offset_y, &tmp,
-                   &cumulative_offset_x, &cumulative_offset_y) != 0) {
+    if (apply_mask(src, dataset->mask, win_offset_x, win_offset_y, &tmp, &cumulative_offset_x, &cumulative_offset_y) !=
+        0) {
         GDALClose(src);
         return -1;
     }
@@ -1049,14 +1023,14 @@ static int process_dataset(const char *zippath,
  * An array of these is passed to the job queue.
  */
 typedef struct {
-    const char *zippath;          /* Directory containing ZIP files */
-    const Dataset *dataset;       /* Dataset to process */
-    double resolution;            /* Target resolution (from tileset's max max_lod) */
-    char temp_file[PATH_SIZE];    /* Output temp file path */
-    int num_threads;              /* Threads per job for warping */
-    int epsg;                     /* Target EPSG code */
-    const char *resampling;       /* Resampling method */
-    double estimated_work;        /* Estimated work for sorting (larger = more work) */
+    const char *zippath;       /* Directory containing ZIP files */
+    const Dataset *dataset;    /* Dataset to process */
+    double resolution;         /* Target resolution (from tileset's max max_lod) */
+    char temp_file[PATH_SIZE]; /* Output temp file path */
+    int num_threads;           /* Threads per job for warping */
+    int epsg;                  /* Target EPSG code */
+    const char *resampling;    /* Resampling method */
+    double estimated_work;     /* Estimated work for sorting (larger = more work) */
 } DatasetJob;
 
 /*
@@ -1065,7 +1039,7 @@ typedef struct {
  */
 static double estimate_work(const Dataset *dataset) {
     if (!dataset->mask || dataset->mask->count == 0) {
-        return 0.0;  /* No mask = unknown size, sort to end */
+        return 0.0; /* No mask = unknown size, sort to end */
     }
 
     /* Compute bounding box of outer ring */
@@ -1116,29 +1090,14 @@ static int dataset_job_func(int job_index, void *job_data) {
     DatasetJob *jobs = (DatasetJob *)job_data;
     DatasetJob *job = &jobs[job_index];
 
-    return process_dataset(
-        job->zippath,
-        job->dataset,
-        job->resolution,
-        job->temp_file,
-        job->num_threads,
-        job->epsg,
-        job->resampling
-    );
+    return process_dataset(job->zippath, job->dataset, job->resolution, job->temp_file, job->num_threads, job->epsg,
+                           job->resampling);
 }
 
-int process_datasets_parallel(
-    const Tileset **tilesets,
-    int tileset_count,
-    const char *zippath,
-    const char *tmppath,
-    int num_workers,
-    int threads_per_job,
-    int epsg,
-    const char *resampling
-) {
+int process_datasets_parallel(const Tileset **tilesets, int tileset_count, const char *zippath, const char *tmppath,
+                              int num_workers, int threads_per_job, int epsg, const char *resampling) {
     /* Count total datasets */
-    int total_datasets = 0;
+    size_t total_datasets = 0;
     for (int t = 0; t < tileset_count; t++) {
         total_datasets += tilesets[t]->dataset_count;
     }
@@ -1162,9 +1121,9 @@ int process_datasets_parallel(
         info("\n=== Tileset: %s ===", tileset->name);
         info("  Output path: %s", tileset->tile_path);
         info("  Zoom range: %d-%d", tileset->zoom_min, tileset->zoom_max);
-        info("  Datasets: %d", tileset->dataset_count);
+        info("  Datasets: %zu", tileset->dataset_count);
 
-        for (int d = 0; d < tileset->dataset_count; d++) {
+        for (size_t d = 0; d < tileset->dataset_count; d++) {
             const Dataset *dataset = get_dataset(tileset->datasets[d]);
             if (!dataset) {
                 error("Unknown dataset: %s", tileset->datasets[d]);
@@ -1202,8 +1161,7 @@ int process_datasets_parallel(
         job_names[i] = jobs[i].dataset->name;
     }
 
-    info("\nProcessing %d datasets with %d parallel workers...",
-         actual_job_count, num_workers);
+    info("\nProcessing %d datasets with %d parallel workers...", actual_job_count, num_workers);
 
     /* Configure and run the job queue */
     JobQueueConfig config = {
@@ -1219,8 +1177,7 @@ int process_datasets_parallel(
     JobQueueResult jq_result;
     int queue_result = jobqueue_run(&config, &jq_result);
 
-    info("\nDataset processing complete: %d succeeded, %d failed",
-         jq_result.completed, jq_result.failed);
+    info("\nDataset processing complete: %d succeeded, %d failed", jq_result.completed, jq_result.failed);
 
     free(job_names);
     free(jobs);
