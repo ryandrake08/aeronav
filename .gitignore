@@ -1,7 +1,9 @@
-env*
-.vscode
+# Build outputs
+aeronav2tiles
+aeronav_download
+src/*.o
+
+# Development
 mapdata
-*.pstats
-__pycache__
 ._*
 .ignore

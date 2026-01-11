@@ -22,9 +22,12 @@ LDFLAGS_DEBUG = -fsanitize=address,undefined
 CFLAGS = $(CFLAGS_BASE) $(CFLAGS_RELEASE)
 LDFLAGS = $(LDFLAGS_RELEASE)
 
+# Source directory
+SRCDIR = src
+
 # aeronav2tiles
 TILES_SRCS = aeronav2tiles.c config.c processing.c tiling.c jobqueue.c cJSON.c
-TILES_OBJS = $(TILES_SRCS:.c=.o)
+TILES_OBJS = $(addprefix $(SRCDIR)/, $(TILES_SRCS:.c=.o))
 
 .PHONY: all release debug clean
 
@@ -39,30 +42,30 @@ debug: aeronav2tiles aeronav_download
 aeronav2tiles: $(TILES_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(GDAL_LIBS) -lm $(LDFLAGS)
 
-aeronav_download: aeronav_download.o
+aeronav_download: $(SRCDIR)/aeronav_download.o
 	$(CC) $(CFLAGS) -o $@ $^ $(CURL_LIBS) $(XML2_LIBS) $(LDFLAGS)
 
 # Object files that need GDAL
-aeronav2tiles.o config.o processing.o tiling.o: %.o: %.c
+$(SRCDIR)/aeronav2tiles.o $(SRCDIR)/config.o $(SRCDIR)/processing.o $(SRCDIR)/tiling.o: $(SRCDIR)/%.o: $(SRCDIR)/%.c
 	$(CC) $(CFLAGS) $(GDAL_CFLAGS) -c -o $@ $<
 
 # Object files without special flags
-jobqueue.o: jobqueue.c jobqueue.h
+$(SRCDIR)/jobqueue.o: $(SRCDIR)/jobqueue.c $(SRCDIR)/jobqueue.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # Vendored cJSON - suppress sprintf deprecation warnings
-cJSON.o: cJSON.c cJSON.h
+$(SRCDIR)/cJSON.o: $(SRCDIR)/cJSON.c $(SRCDIR)/cJSON.h
 	$(CC) $(CFLAGS) -Wno-deprecated-declarations -c -o $@ $<
 
 # aeronav_download needs curl and xml2
-aeronav_download.o: aeronav_download.c
+$(SRCDIR)/aeronav_download.o: $(SRCDIR)/aeronav_download.c
 	$(CC) $(CFLAGS) $(CURL_CFLAGS) $(XML2_CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f $(TILES_OBJS) aeronav_download.o aeronav2tiles aeronav_download
+	rm -f $(TILES_OBJS) $(SRCDIR)/aeronav_download.o aeronav2tiles aeronav_download
 
 # Header dependencies
-aeronav2tiles.o: aeronav.h
-config.o: aeronav.h cJSON.h
-processing.o: aeronav.h jobqueue.h
-tiling.o: aeronav.h
+$(SRCDIR)/aeronav2tiles.o: $(SRCDIR)/aeronav.h
+$(SRCDIR)/config.o: $(SRCDIR)/aeronav.h $(SRCDIR)/cJSON.h
+$(SRCDIR)/processing.o: $(SRCDIR)/aeronav.h $(SRCDIR)/jobqueue.h
+$(SRCDIR)/tiling.o: $(SRCDIR)/aeronav.h
