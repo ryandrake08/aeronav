@@ -16,11 +16,11 @@ Both implementations read from the same configuration file (`aeronav.conf.json`)
 ## Quick Start (C Implementation)
 
 ```bash
-# 1. Download current charts from FAA
-python aeronav_download.py ./zips
-
-# 2. Build the C program
+# 1. Build the C programs
 cd src && make && cd ..
+
+# 2. Download current charts from FAA
+src/aeronav_download ./zips
 
 # 3. Generate all tilesets
 src/aeronav2tiles ./zips --tmppath /tmp/aeronav --outpath ./tiles --tilesets all
@@ -101,7 +101,15 @@ cd src
 make
 ```
 
-**Requirements**: GDAL development libraries (`libgdal-dev` on Debian/Ubuntu)
+**Requirements** (Debian/Ubuntu):
+```bash
+sudo apt install libgdal-dev libcurl4-openssl-dev libxml2-dev
+```
+
+**Requirements** (macOS):
+```bash
+brew install gdal curl libxml2
+```
 
 ### Usage
 
@@ -138,7 +146,8 @@ src/aeronav2tiles --list
 
 | File | Description |
 |------|-------------|
-| `main.c` | Entry point, CLI argument parsing |
+| `aeronav2tiles.c` | Tile generator entry point and CLI parsing |
+| `aeronav_download.c` | Chart downloader (standalone program) |
 | `config.c` | JSON configuration loading via cJSON |
 | `processing.c` | Dataset processing pipeline (mask, GCPs, warp) |
 | `tiling.c` | XYZ tile generation from VRT mosaics |
@@ -327,9 +336,13 @@ A Leaflet viewer is generated at `outpath/leaflet.html` for visual verification.
 
 ## Chart Download
 
-The `aeronav_download.py` script downloads current charts from FAA:
+Both C and Python downloaders are available:
 
 ```bash
+# C implementation (recommended)
+src/aeronav_download ./zips [-q]
+
+# Python implementation
 python aeronav_download.py ./zips [--quiet]
 ```
 
@@ -337,6 +350,9 @@ Features:
 - Scrapes aeronav.faa.gov for current chart URLs
 - Uses If-Modified-Since for incremental updates
 - Downloads VFR, IFR, and planning chart ZIPs
+- Automatically fixes inconsistent dates in FAA URLs
+
+The C implementation uses libcurl and libxml2 for HTTP and HTML parsing.
 
 ---
 
