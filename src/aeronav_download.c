@@ -7,16 +7,16 @@
  * Dependencies: libcurl, libxml2
  */
 
+#include <ctype.h>
+#include <errno.h>
+#include <getopt.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-#include <unistd.h>
 #include <sys/stat.h>
 #include <time.h>
-#include <getopt.h>
-#include <errno.h>
-#include <ctype.h>
+#include <unistd.h>
 
 #include <curl/curl.h>
 #include <libxml/HTMLparser.h>
@@ -30,12 +30,9 @@
 #define MAX_URLS 256
 
 /* Chart type div IDs on the FAA website */
-static const char *VFR_CHART_TYPES[] = {
-    "sectional", "terminalArea", "helicopter", "grandCanyon", "Planning", "caribbean", NULL
-};
-static const char *IFR_CHART_TYPES[] = {
-    "lowsHighsAreas", "planning", "caribbean", "gulf", NULL
-};
+static const char *VFR_CHART_TYPES[] = {"sectional", "terminalArea", "helicopter", "grandCanyon",
+                                        "Planning",  "caribbean",    NULL};
+static const char *IFR_CHART_TYPES[] = {"lowsHighsAreas", "planning", "caribbean", "gulf", NULL};
 
 /* Global quiet flag */
 static bool quiet = false;
@@ -164,7 +161,8 @@ static bool text_matches(const char *text, const char *target) {
     if (!text) return false;
 
     /* Skip leading whitespace */
-    while (*text && isspace((unsigned char)*text)) text++;
+    while (*text && isspace((unsigned char)*text))
+        text++;
 
     /* Compare case-insensitively */
     size_t target_len = strlen(target);
@@ -220,11 +218,9 @@ static void find_geotiff_links(xmlNodePtr node, char *urls[], int *count, int ma
 /*
  * Scrape chart URLs from an FAA index page.
  */
-static void scrape_chart_urls(const char *html, const char **chart_types,
-                              char *urls[], int *count, int max) {
+static void scrape_chart_urls(const char *html, const char **chart_types, char *urls[], int *count, int max) {
     /* Parse HTML */
-    htmlDocPtr doc = htmlReadMemory(html, strlen(html), NULL, NULL,
-                                     HTML_PARSE_NOERROR | HTML_PARSE_NOWARNING);
+    htmlDocPtr doc = htmlReadMemory(html, strlen(html), NULL, NULL, HTML_PARSE_NOERROR | HTML_PARSE_NOWARNING);
     if (!doc) {
         fprintf(stderr, "Error parsing HTML\n");
         return;
@@ -259,8 +255,7 @@ static void scrape_chart_urls(const char *html, const char **chart_types,
             int td_count = 0;
             xmlNodePtr second_td = NULL;
             for (xmlNodePtr child = row->children; child; child = child->next) {
-                if (child->type == XML_ELEMENT_NODE &&
-                    xmlStrcmp(child->name, (xmlChar *)"td") == 0) {
+                if (child->type == XML_ELEMENT_NODE && xmlStrcmp(child->name, (xmlChar *)"td") == 0) {
                     td_count++;
                     if (td_count == 2) {
                         second_td = child;
@@ -297,13 +292,10 @@ static const char *find_date_in_url(const char *url, const char **end) {
     while ((p = strchr(p, '/')) != NULL) {
         p++; /* Skip the slash */
         /* Check for DD-DD-DDDD pattern */
-        if (strlen(p) >= 10 &&
-            isdigit((unsigned char)p[0]) && isdigit((unsigned char)p[1]) &&
-            p[2] == '-' &&
-            isdigit((unsigned char)p[3]) && isdigit((unsigned char)p[4]) &&
-            p[5] == '-' &&
-            isdigit((unsigned char)p[6]) && isdigit((unsigned char)p[7]) &&
-            isdigit((unsigned char)p[8]) && isdigit((unsigned char)p[9])) {
+        if (strlen(p) >= 10 && isdigit((unsigned char)p[0]) && isdigit((unsigned char)p[1]) && p[2] == '-' &&
+            isdigit((unsigned char)p[3]) && isdigit((unsigned char)p[4]) && p[5] == '-' &&
+            isdigit((unsigned char)p[6]) && isdigit((unsigned char)p[7]) && isdigit((unsigned char)p[8]) &&
+            isdigit((unsigned char)p[9])) {
             *end = p + 10;
             return p;
         }
@@ -401,7 +393,7 @@ int main(int argc, char *argv[]) {
     static struct option long_options[] = {
         {"quiet", no_argument, 0, 'q'},
         {"help",  no_argument, 0, 'h'},
-        {0, 0, 0, 0}
+        {0,       0,           0, 0  }
     };
 
     int opt;
@@ -475,7 +467,8 @@ int main(int argc, char *argv[]) {
     /* Create output directory */
     if (mkdir(zippath, 0755) != 0 && errno != EEXIST) {
         fprintf(stderr, "Error creating directory %s: %s\n", zippath, strerror(errno));
-        for (int i = 0; i < count; i++) free(urls[i]);
+        for (int i = 0; i < count; i++)
+            free(urls[i]);
         curl_easy_cleanup(curl);
         curl_global_cleanup();
         xmlCleanupParser();
@@ -516,8 +509,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (!quiet) {
-        printf("\nDownload complete: %d downloaded, %d already up to date",
-               downloaded, skipped);
+        printf("\nDownload complete: %d downloaded, %d already up to date", downloaded, skipped);
         if (errors > 0) {
             printf(", %d errors", errors);
         }
@@ -525,7 +517,8 @@ int main(int argc, char *argv[]) {
     }
 
     /* Cleanup */
-    for (int i = 0; i < count; i++) free(urls[i]);
+    for (int i = 0; i < count; i++)
+        free(urls[i]);
     curl_easy_cleanup(curl);
     curl_global_cleanup();
     xmlCleanupParser();

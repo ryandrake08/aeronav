@@ -1,3 +1,4 @@
+// NOLINTFILE
 /*
   Copyright (c) 2009-2017 Dave Gamble and cJSON contributors
 
@@ -19,6 +20,8 @@
   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
   THE SOFTWARE.
 */
+
+/* clang-format off */
 
 /* cJSON */
 /* JSON parser in C. */

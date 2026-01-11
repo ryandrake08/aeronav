@@ -4,16 +4,16 @@
  * Main entry point and command-line parsing.
  */
 
+#include <dirent.h>
+#include <errno.h>
+#include <getopt.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
-#include <errno.h>
-#include <getopt.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <dirent.h>
 
 #include "aeronav.h"
 
@@ -79,8 +79,7 @@ static void list_tilesets(void) {
     for (int i = 0; i < count; i++) {
         const Tileset *ts = get_tileset(names[i]);
         if (ts) {
-            printf("  %-40s (%s, zoom %d-%d)\n",
-                   ts->name, ts->tile_path, ts->zoom_min, ts->zoom_max);
+            printf("  %-40s (%s, zoom %d-%d)\n", ts->name, ts->tile_path, ts->zoom_min, ts->zoom_max);
         }
     }
 }
@@ -175,23 +174,23 @@ int main(int argc, char *argv[]) {
     bool do_list = false;
 
     static struct option long_options[] = {
-        {"config",              required_argument, 0, 'c'},
-        {"zippath",             required_argument, 0, 'z'},
-        {"tmppath",             required_argument, 0, 't'},
-        {"outpath",             required_argument, 0, 'o'},
-        {"tilesets",            required_argument, 0, 's'},
-        {"format",              required_argument, 0, 'f'},
-        {"jobs",                required_argument, 0, 'j'},
-        {"tile-workers",        required_argument, 0, 'w'},
-        {"epsg",                required_argument, 0, 'e'},
+        {"config",               required_argument, 0, 'c'},
+        {"zippath",              required_argument, 0, 'z'},
+        {"tmppath",              required_argument, 0, 't'},
+        {"outpath",              required_argument, 0, 'o'},
+        {"tilesets",             required_argument, 0, 's'},
+        {"format",               required_argument, 0, 'f'},
+        {"jobs",                 required_argument, 0, 'j'},
+        {"tile-workers",         required_argument, 0, 'w'},
+        {"epsg",                 required_argument, 0, 'e'},
         {"reproject-resampling", required_argument, 0, 'R'},
-        {"tile-resampling",     required_argument, 0, 'S'},
-        {"cleanup",             no_argument,       0, 'C'},
-        {"tile-only",           no_argument,       0, 'T'},
-        {"quiet",               no_argument,       0, 'q'},
-        {"list",                no_argument,       0, 'l'},
-        {"help",                no_argument,       0, 'h'},
-        {0, 0, 0, 0}
+        {"tile-resampling",      required_argument, 0, 'S'},
+        {"cleanup",              no_argument,       0, 'C'},
+        {"tile-only",            no_argument,       0, 'T'},
+        {"quiet",                no_argument,       0, 'q'},
+        {"list",                 no_argument,       0, 'l'},
+        {"help",                 no_argument,       0, 'h'},
+        {0,                      0,                 0, 0  }
     };
 
     int opt;
@@ -277,7 +276,7 @@ int main(int argc, char *argv[]) {
     /* Set defaults based on CPU count */
     int cpu_count = get_cpu_count();
     if (opts.jobs == 0) {
-        opts.jobs = cpu_count > 4 ? 4 : cpu_count;  /* Default: 4 concurrent datasets */
+        opts.jobs = cpu_count > 4 ? 4 : cpu_count; /* Default: 4 concurrent datasets */
     }
     int threads_per_job = cpu_count / opts.jobs;
     if (threads_per_job < 1) threads_per_job = 1;
@@ -289,8 +288,8 @@ int main(int argc, char *argv[]) {
     info("  zippath: %s", opts.zippath ? opts.zippath : "(none - datasets will not be processed)");
     info("  outpath: %s", opts.outpath ? opts.outpath : "(none - tiles will not be generated)");
     info("  tmppath: %s", opts.tmppath);
-    info("  CPUs: %d, jobs: %d, threads/job: %d, tile workers: %d",
-         cpu_count, opts.jobs, threads_per_job, opts.tile_workers);
+    info("  CPUs: %d, jobs: %d, threads/job: %d, tile workers: %d", cpu_count, opts.jobs, threads_per_job,
+         opts.tile_workers);
 
     /* Ensure output and temp directories exist */
     if (opts.outpath && mkdir_p(opts.outpath) != 0) return 1;
@@ -315,7 +314,7 @@ int main(int argc, char *argv[]) {
     }
 
     int valid_tileset_count = 0;
-    int total_datasets = 0;
+    size_t total_datasets = 0;
 
     for (int i = 0; i < tileset_count; i++) {
         const Tileset *ts = get_tileset(tileset_names[i]);
@@ -333,34 +332,19 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    info("Processing %d tileset(s) with %d total dataset(s)...",
-         valid_tileset_count, total_datasets);
+    info("Processing %d tileset(s) with %zu total dataset(s)...", valid_tileset_count, total_datasets);
 
     if (opts.zippath && !opts.tile_only) {
-        if (process_datasets_parallel(
-                tilesets,
-                valid_tileset_count,
-                opts.zippath,
-                opts.tmppath,
-                opts.jobs,
-                threads_per_job,
-                opts.epsg,
-                opts.reproject_resampling) != 0) {
+        if (process_datasets_parallel(tilesets, valid_tileset_count, opts.zippath, opts.tmppath, opts.jobs,
+                                      threads_per_job, opts.epsg, opts.reproject_resampling) != 0) {
             error("Dataset processing had failures");
         }
     }
 
     /* Generate tiles for all tilesets */
     if (opts.outpath) {
-        generate_tileset_tiles_parallel(
-            tilesets,
-            valid_tileset_count,
-            opts.tmppath,
-            opts.outpath,
-            opts.format,
-            opts.tile_resampling,
-            opts.tile_workers
-        );
+        generate_tileset_tiles_parallel(tilesets, valid_tileset_count, opts.tmppath, opts.outpath, opts.format,
+                                        opts.tile_resampling, opts.tile_workers);
     }
 
     free(tilesets);

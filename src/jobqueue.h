@@ -42,21 +42,21 @@ typedef int (*worker_init_t)(int worker_id, void *init_data);
  * Job queue configuration.
  */
 typedef struct {
-    int num_jobs;                 /* Total number of jobs */
-    int max_workers;              /* Maximum concurrent workers */
-    void *job_data;               /* Opaque pointer to job data array */
-    job_func_t job_func;          /* Function to execute each job */
-    worker_init_t worker_init;    /* Optional: worker initialization function */
-    void *init_data;              /* Optional: data passed to worker_init */
-    const char **job_names;       /* Optional: job names for progress display */
+    int num_jobs;              /* Total number of jobs */
+    int max_workers;           /* Maximum concurrent workers */
+    void *job_data;            /* Opaque pointer to job data array */
+    job_func_t job_func;       /* Function to execute each job */
+    worker_init_t worker_init; /* Optional: worker initialization function */
+    void *init_data;           /* Optional: data passed to worker_init */
+    const char **job_names;    /* Optional: job names for progress display */
 } JobQueueConfig;
 
 /*
  * Job queue result statistics.
  */
 typedef struct {
-    int completed;                /* Number of successfully completed jobs */
-    int failed;                   /* Number of failed jobs */
+    int completed; /* Number of successfully completed jobs */
+    int failed;    /* Number of failed jobs */
 } JobQueueResult;
 
 /*

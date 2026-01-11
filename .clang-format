@@ -1,0 +1,59 @@
+# C code style for aeronav2tiles
+# Run: clang-format -i src/*.c src/*.h
+# Note: cJSON.c/h contain "// clang-format off" (vendored code)
+
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 120
+
+# Brace style: K&R (opening brace on same line)
+BreakBeforeBraces: Attach
+
+# Pointer alignment: attach to variable name
+PointerAlignment: Right
+DerivePointerAlignment: false
+
+# Indentation
+IndentCaseLabels: true
+IndentCaseBlocks: false
+NamespaceIndentation: None
+
+# Short forms
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortBlocksOnASingleLine: Empty
+AllowShortCaseLabelsOnASingleLine: false
+
+# Function parameters - pack them on lines when possible
+BinPackParameters: true
+BinPackArguments: true
+AlignAfterOpenBracket: Align
+
+# Spaces
+SpaceBeforeParens: ControlStatements
+SpaceAfterCStyleCast: false
+SpaceBeforeAssignmentOperators: true
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# Alignment
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignTrailingComments: true
+AlignOperands: true
+AlignArrayOfStructures: Left
+
+# Keep single-line comments as-is
+ReflowComments: false
+
+# Include sorting
+SortIncludes: false
+IncludeBlocks: Preserve
+
+# Penalties to avoid breaking certain things
+PenaltyBreakBeforeFirstCallParameter: 1000
+PenaltyReturnTypeOnItsOwnLine: 200
+PenaltyBreakString: 1000
