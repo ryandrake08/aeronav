@@ -62,7 +62,7 @@ static void print_usage(const char *prog) {
     printf("  -q, --quiet          Suppress progress output\n");
     printf("  -j, --jobs <N>       Concurrent dataset processes (default: auto)\n");
     printf("  -w, --tile-workers <N>  Tile generation workers (default: auto)\n");
-    printf("  -f, --format <fmt>   Tile format: png, jpeg, webp (default: webp)\n");
+    printf("  -f, --format <fmt>   Tile format: png, jpeg, webp (default: png)\n");
     printf("  -h, --help           Show this help message\n");
     printf("\n");
     printf("Resampling methods: nearest, bilinear, cubic, cubicspline, lanczos, average, mode\n");

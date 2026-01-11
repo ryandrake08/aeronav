@@ -114,7 +114,7 @@ Options:
   -c, --config PATH       Config file (default: aeronav.conf.json)
   -T, --tilesets LIST     Comma-separated tilesets, or "all"
   -w, --workers N         Number of parallel workers (default: CPU count)
-  -f, --format FORMAT     Tile format: webp, png (default: webp)
+  -f, --format FORMAT     Tile format: png, jpeg, webp (default: png)
   -r, --resampling METHOD Resampling: nearest, bilinear, cubic, lanczos (default: bilinear)
   -l, --list              List available tilesets and exit
   -q, --quiet             Suppress progress output
@@ -151,11 +151,13 @@ src/aeronav2tiles --list
 ### Processing Pipeline
 
 ```
-ZIP files ──► /vsizip/ ──► RGB Expand ──► Mask ──► GCPs ──► Warp ──► VRT ──► Tiles
-                │              │           │        │        │
+ZIP files ──► /vsizip/ ──► RGB Expand ──► Mask ──► GCPs ──► Warp ──► Overviews ──► VRTs ──► Tiles
+                │              │           │        │        │          │           │
+                │              │           │        │        │          │           └─ Zoom-specific VRTs
+                │              │           │        │        │          └─ GDALBuildOverviews
                 │              │           │        │        └─ EPSG:3857 reprojection
-                │              │           │        └─ Apply ground control points
-                │              │           └─ Extract mask bounding box window
+                │              │           │        └─ Apply GCPs with offset adjustment
+                │              │           └─ Extract mask bounding box, track offset
                 │              └─ Palette to RGB (windowed if masked)
                 └─ Direct ZIP access, no extraction
 ```
@@ -166,11 +168,13 @@ ZIP files ──► /vsizip/ ──► RGB Expand ──► Mask ──► GCPs 
 
 2. **In-memory processing**: Intermediate datasets use GDAL's MEM driver, avoiding temporary file writes until the final reprojected output.
 
-3. **Two-phase tiling**:
-   - *Phase 1*: Generate base tiles at max zoom from source raster (parallelized)
-   - *Phase 2*: Generate overview tiles by combining child tiles (currently sequential)
+3. **Zoom-specific VRTs**: Each zoom level uses a VRT containing only datasets where `max_lod >= zoom`. This prevents "patchwork" artifacts where lower-resolution datasets would appear at higher zoom levels.
 
-4. **Dynamic work distribution**: Workers grab jobs via atomic counter rather than static assignment, ensuring good load balancing.
+4. **Inline overview building**: After reprojection, `GDALBuildOverviews()` pre-computes image pyramids (levels 2-64) with AVERAGE resampling. This allows efficient tile generation at any zoom level.
+
+5. **Single-phase parallel tiling**: All tiles across all zoom levels are collected upfront, workers fork once, and each caches VRT handles by zoom level. No per-zoom-level forking overhead.
+
+6. **Dynamic work distribution**: Workers grab jobs via atomic counter rather than static assignment, ensuring good load balancing.
 
 ### Performance Optimizations
 
@@ -205,7 +209,21 @@ After:  Read only 21M pixels directly
 
 Datasets are sorted by estimated work (mask bounding box area) before processing. Large jobs start first, reducing the "straggler" effect where small jobs finish quickly leaving one large job running alone.
 
-#### 4. Progress Display
+#### 4. GCP Offset Tracking
+
+Inset datasets use Ground Control Points (GCPs) with pixel coordinates specified in the original full-image space. After windowing (RGB expansion + mask extraction), these coordinates must be adjusted:
+
+- `expand_to_rgb()` outputs window offset if it extracts a sub-region
+- `apply_mask()` tracks cumulative offset through both windowing stages
+- `apply_gcps()` subtracts the cumulative offset from GCP pixel coordinates
+
+Without this adjustment, insets would be georeferenced to incorrect locations.
+
+#### 5. BIGTIFF Support
+
+Reprojected datasets with embedded overviews can exceed 4GB. The implementation uses `BIGTIFF=IF_SAFER` for automatic format selection and `COMPRESS_OVERVIEW=LZW` for overview compression.
+
+#### 6. Progress Display
 
 Real-time display showing each worker's current dataset, using ANSI escape codes for in-place updates:
 
@@ -250,14 +268,17 @@ Options:
 ### Processing Pipeline
 
 ```
-ZIP files ──► Unzip ──► RGB Expand ──► Mask ──► GCPs ──► Warp ──► VRT ──► Tiles
-                │           │           │        │        │
+ZIP files ──► Unzip ──► RGB Expand ──► Mask ──► GCPs ──► Warp ──► Zoom VRTs ──► Tiles
+                │           │           │        │        │           │
+                │           │           │        │        │           └─ VRT per zoom level
                 │           │           │        │        └─ rasterio reproject
                 │           │           │        └─ Affine transform from GCPs
                 │           │           └─ rasterio mask/clip
                 │           └─ In-place palette expansion
                 └─ Extract to tmppath
 ```
+
+The Python implementation uses `rasterio.windows.transform()` to adjust the GCP-derived transform for windowing, rather than explicitly tracking pixel offsets like the C implementation.
 
 ---
 
@@ -271,8 +292,11 @@ ZIP files ──► Unzip ──► RGB Expand ──► Mask ──► GCPs ─
 | **Progress display** | ANSI terminal updates | Print statements |
 | **Latitude normalization** | Yes | Yes |
 | **Windowed mask/RGB** | Yes | No (full image) |
+| **Inline overviews** | Yes (GDALBuildOverviews) | No |
+| **Zoom-specific VRTs** | Yes | Yes |
+| **GCP offset tracking** | Yes (explicit) | N/A (handled by transform adjustment) |
 | **Work sorting** | Yes | No |
-| **Tile format** | WebP, PNG | WebP |
+| **Tile format** | PNG, JPEG, WebP | PNG, JPEG, WebP |
 | **Dependencies** | GDAL C library | rasterio, numpy |
 
 **When to use C**: Production processing, large datasets, memory-constrained systems
@@ -290,7 +314,7 @@ outpath/
   vfr/
     10/
       123/
-        456.webp
+        456.png
   ifr_low/
     ...
 ```
