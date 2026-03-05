@@ -420,7 +420,7 @@ typedef struct {
  * ============================================================================ */
 
 static int generate_base_tile(GDALDatasetH ds, int z, int x, int y, const char *outpath, const char *tile_path,
-                              const char *format, GDALRIOResampleAlg resample_alg) {
+                              const char *format, GDALRIOResampleAlg resample_alg, unsigned char *tile_data) {
     /* Skip if tile already exists */
     char file_path[PATH_SIZE];
     snprintf(file_path, sizeof(file_path), "%s/%s/%d/%d/%d.%s", outpath, tile_path, z, x, y, format);
@@ -497,60 +497,39 @@ static int generate_base_tile(GDALDatasetH ds, int z, int x, int y, const char *
         return 1; /* Skip */
     }
 
-    /* Allocate tile buffer */
+    /* Check band count */
     int band_count = GDALGetRasterCount(ds);
     if (band_count < 3) {
         error("Expected at least 3 bands, got %d", band_count);
         return -1;
     }
 
-    /* Create RGBA tile buffer */
-    unsigned char *tile_data = calloc(TILE_SIZE * TILE_SIZE * 4, 1);
-    if (!tile_data) {
-        error("Failed to allocate tile buffer");
-        return -1;
-    }
+    /* Clear tile buffer (transparent black for partial tiles) */
+    memset(tile_data, 0, TILE_SIZE * TILE_SIZE * 4);
 
-    /* Read and resample each band.
-     * GDALRasterIOEx resamples from (read_x, read_y, read_w, read_h) in source
-     * to (tile_w, tile_h) in the output buffer using the specified resampling.
-     */
-    unsigned char band_buf[TILE_SIZE * TILE_SIZE];
+    /* Read all bands at once into pixel-interleaved RGBA layout.
+     * Writes directly into the correct sub-region of the tile buffer,
+     * using stride to skip over surrounding transparent pixels. */
+    int read_bands = (band_count >= 4) ? 4 : 3;
+    int band_map[] = {1, 2, 3, 4};
+
     GDALRasterIOExtraArg extra_arg;
     INIT_RASTERIO_EXTRA_ARG(extra_arg);
     extra_arg.eResampleAlg = resample_alg;
 
-    for (int b = 0; b < 4; b++) {
-        int src_band;
-        if (b < 3) {
-            src_band = b + 1; /* RGB: bands 1-3 */
-        } else {
-            src_band = (band_count >= 4) ? 4 : 0; /* Alpha: band 4 if available */
-        }
+    unsigned char *dst = tile_data + ((size_t)tile_y0 * TILE_SIZE + tile_x0) * 4;
 
-        if (src_band > 0) {
-            GDALRasterBandH band = GDALGetRasterBand(ds, src_band);
-            if (GDALRasterIOEx(band, GF_Read, read_x, read_y, read_w, read_h, band_buf, tile_w, tile_h, GDT_Byte, 0, 0,
-                               &extra_arg) != CE_None) {
-                error("GDALRasterIOEx read failed for band %d", src_band);
-                free(tile_data);
-                return -1;
-            }
+    if (GDALDatasetRasterIOEx(ds, GF_Read, read_x, read_y, read_w, read_h, dst, tile_w, tile_h, GDT_Byte, read_bands,
+                              band_map, 4, (GSpacing)TILE_SIZE * 4, 1, &extra_arg) != CE_None) {
+        error("GDALDatasetRasterIOEx read failed for tile %d/%d/%d", z, x, y);
+        return -1;
+    }
 
-            /* Copy to tile buffer */
-            for (int y_off = 0; y_off < tile_h; y_off++) {
-                for (int x_off = 0; x_off < tile_w; x_off++) {
-                    int tile_idx = ((tile_y0 + y_off) * TILE_SIZE + (tile_x0 + x_off)) * 4 + b;
-                    tile_data[tile_idx] = band_buf[y_off * tile_w + x_off];
-                }
-            }
-        } else if (b == 3) {
-            /* No alpha band in source - set opaque where we have data */
-            for (int y_off = 0; y_off < tile_h; y_off++) {
-                for (int x_off = 0; x_off < tile_w; x_off++) {
-                    int tile_idx = ((tile_y0 + y_off) * TILE_SIZE + (tile_x0 + x_off)) * 4 + 3;
-                    tile_data[tile_idx] = 255;
-                }
+    /* Fill alpha channel if source has no alpha band */
+    if (band_count < 4) {
+        for (int y_off = 0; y_off < tile_h; y_off++) {
+            for (int x_off = 0; x_off < tile_w; x_off++) {
+                tile_data[((tile_y0 + y_off) * TILE_SIZE + (tile_x0 + x_off)) * 4 + 3] = 255;
             }
         }
     }
@@ -565,7 +544,6 @@ static int generate_base_tile(GDALDatasetH ds, int z, int x, int y, const char *
     }
 
     if (is_empty) {
-        free(tile_data);
         return 1; /* Skip empty tile */
     }
 
@@ -574,7 +552,6 @@ static int generate_base_tile(GDALDatasetH ds, int z, int x, int y, const char *
     snprintf(dir_path, sizeof(dir_path), "%s/%s/%d/%d", outpath, tile_path, z, x);
     if (mkdir_p(dir_path) != 0) {
         error("Failed to create directory: %s", dir_path);
-        free(tile_data);
         return -1;
     }
 
@@ -582,39 +559,33 @@ static int generate_base_tile(GDALDatasetH ds, int z, int x, int y, const char *
     GDALDriverH out_driver = GDALGetDriverByName(format);
     if (!out_driver) {
         error("%s driver not available", format);
-        free(tile_data);
         return -1;
     }
 
-    /* Create MEM dataset first, then translate to PNG */
+    /* JPEG doesn't support alpha; use 3 bands (RGB) for JPEG, 4 (RGBA) for PNG/WebP */
+    int has_alpha = (strcmp(format, "jpeg") != 0);
+    int out_bands = has_alpha ? 4 : 3;
+
+    /* Create MEM dataset, then encode to output format */
     GDALDriverH mem_driver = GDALGetDriverByName("MEM");
-    GDALDatasetH mem_ds = GDALCreate(mem_driver, "", TILE_SIZE, TILE_SIZE, 4, GDT_Byte, NULL);
+    GDALDatasetH mem_ds = GDALCreate(mem_driver, "", TILE_SIZE, TILE_SIZE, out_bands, GDT_Byte, NULL);
     if (!mem_ds) {
         error("Failed to create MEM dataset for tile");
-        free(tile_data);
         return -1;
     }
 
-    /* Write tile data to MEM dataset */
-    unsigned char band_data[TILE_SIZE * TILE_SIZE];
+    /* Set color interpretation */
     GDALColorInterp interp[] = {GCI_RedBand, GCI_GreenBand, GCI_BlueBand, GCI_AlphaBand};
+    for (int b = 0; b < out_bands; b++) {
+        GDALSetRasterColorInterpretation(GDALGetRasterBand(mem_ds, b + 1), interp[b]);
+    }
 
-    for (int b = 0; b < 4; b++) {
-        GDALRasterBandH band = GDALGetRasterBand(mem_ds, b + 1);
-
-        for (size_t i = 0; i < TILE_SIZE * TILE_SIZE; i++) {
-            band_data[i] = tile_data[i * 4 + b];
-        }
-
-        if (GDALRasterIO(band, GF_Write, 0, 0, TILE_SIZE, TILE_SIZE, band_data, TILE_SIZE, TILE_SIZE, GDT_Byte, 0, 0) !=
-            CE_None) {
-            error("GDALRasterIO write failed for band %d", b + 1);
-            GDALClose(mem_ds);
-            free(tile_data);
-            return -1;
-        }
-
-        GDALSetRasterColorInterpretation(band, interp[b]);
+    /* Write bands from pixel-interleaved RGBA buffer (reuse band_map from read) */
+    if (GDALDatasetRasterIO(mem_ds, GF_Write, 0, 0, TILE_SIZE, TILE_SIZE, tile_data, TILE_SIZE, TILE_SIZE, GDT_Byte,
+                            out_bands, band_map, 4, (GSpacing)TILE_SIZE * 4, 1) != CE_None) {
+        error("GDALDatasetRasterIO write failed");
+        GDALClose(mem_ds);
+        return -1;
     }
 
     /* Create output file */
@@ -622,13 +593,11 @@ static int generate_base_tile(GDALDatasetH ds, int z, int x, int y, const char *
     if (!out_ds) {
         error("Failed to write tile: %s", file_path);
         GDALClose(mem_ds);
-        free(tile_data);
         return -1;
     }
 
     GDALClose(out_ds);
     GDALClose(mem_ds);
-    free(tile_data);
 
     return 0;
 }
@@ -762,6 +731,13 @@ int generate_tileset_tiles_parallel(const Tileset **tilesets, int tileset_count,
                 /* Cache of open VRT handles by zoom level (opened lazily) */
                 GDALDatasetH vrt_cache[MAX_ZOOM + 1] = {NULL};
 
+                /* Allocate tile buffer once per worker, reused across all tiles */
+                unsigned char *tile_data = malloc(TILE_SIZE * TILE_SIZE * 4);
+                if (!tile_data) {
+                    error("Worker %d: Failed to allocate tile buffer", w);
+                    _exit(1);
+                }
+
                 /* Dynamic work distribution: grab tiles until none remain */
                 while (1) {
                     int i = atomic_fetch_add(next_tile, 1);
@@ -775,6 +751,7 @@ int generate_tileset_tiles_parallel(const Tileset **tilesets, int tileset_count,
                         if (!vrt_cache[z]) {
                             error("Worker %d: Failed to open VRT for zoom %d", w, z);
                             /* Clean up and exit */
+                            free(tile_data);
                             for (int zz = 0; zz <= MAX_ZOOM; zz++) {
                                 if (vrt_cache[zz]) GDALClose(vrt_cache[zz]);
                             }
@@ -783,10 +760,11 @@ int generate_tileset_tiles_parallel(const Tileset **tilesets, int tileset_count,
                     }
 
                     generate_base_tile(vrt_cache[z], tiles[i].z, tiles[i].x, tiles[i].y, outpath, tileset->tile_path,
-                                       format, resample_alg);
+                                       format, resample_alg, tile_data);
                 }
 
                 /* Close all cached VRTs */
+                free(tile_data);
                 for (int z = 0; z <= MAX_ZOOM; z++) {
                     if (vrt_cache[z]) GDALClose(vrt_cache[z]);
                 }
