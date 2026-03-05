@@ -35,6 +35,7 @@ sudo port install gdal +curl libcurl libxml2
 **Build**:
 ```bash
 make           # Release build (optimized)
+make profile   # Profile build (optimized + frame pointers for perf)
 make debug     # Debug build (with sanitizers)
 make clean     # Remove build artifacts
 ```
@@ -237,6 +238,23 @@ The Python implementation uses rasterio instead of the GDAL C API. It produces i
 3. For insets without georeferencing, identify GCPs (pixel x,y -> lon,lat)
 4. Add dataset definition to `aeronav.conf.json`
 5. Add dataset to appropriate tileset(s)
+
+### Optimizations
+
+Profiling tile generation with `perf` (on a 48-core machine processing 280K tiles) reveals that **~50% of CPU time is GDAL overhead** converting data that is already in the right format, while the actual useful work (decompression, resampling, encoding) is a fraction of the total:
+
+| Category | Self % | Details |
+|----------|--------|---------|
+| GDAL byte shuffling | ~18% | `GDALCopyWords64` — strided byte scatter/gather for band interleave/de-interleave |
+| VRT float intermediates | ~11% | `VRTComplexSource::RasterIOInternal<float>` — VRT promotes byte→float→byte for alpha-bearing sources |
+| PNG encoding | ~12% | `png_write_row` (8%) + `deflate` (4%) |
+| GDAL I/O plumbing | ~7% | `IRasterIO`, `RasterIOResampled`, `GDALGetDataTypeSizeBytes` |
+| Memory ops | ~4% | `memmove`, `memset` |
+| LZW decompression | ~1% | `TIFFReadEncodedTile` — actual source data I/O is cheap |
+
+**Planned optimizations** (in priority order):
+
+1. **Bypass VRT for reads** (~10-15% savings): Read directly from GeoTIFF overviews instead of through VRT, eliminating the `VRTComplexSource` float intermediate path. Larger architectural change.
 
 ### Code Style
 

@@ -23,6 +23,7 @@
 #include <gdal_utils.h>
 
 #include "aeronav.h"
+#include "tile_encode.h"
 
 /* Standard web map tile size in pixels */
 #define TILE_SIZE ((size_t)256)
@@ -420,10 +421,11 @@ typedef struct {
  * ============================================================================ */
 
 static int generate_base_tile(GDALDatasetH ds, int z, int x, int y, const char *outpath, const char *tile_path,
-                              const char *format, GDALRIOResampleAlg resample_alg, unsigned char *tile_data) {
+                              const char *format_ext, tile_encode_fn encoder, GDALRIOResampleAlg resample_alg,
+                              unsigned char *tile_data) {
     /* Skip if tile already exists */
     char file_path[PATH_SIZE];
-    snprintf(file_path, sizeof(file_path), "%s/%s/%d/%d/%d.%s", outpath, tile_path, z, x, y, format);
+    snprintf(file_path, sizeof(file_path), "%s/%s/%d/%d/%d.%s", outpath, tile_path, z, x, y, format_ext);
     struct stat st;
     if (stat(file_path, &st) == 0) {
         return 2; /* Skipped - already exists */
@@ -555,49 +557,11 @@ static int generate_base_tile(GDALDatasetH ds, int z, int x, int y, const char *
         return -1;
     }
 
-    /* Write tile using GDAL */
-    GDALDriverH out_driver = GDALGetDriverByName(format);
-    if (!out_driver) {
-        error("%s driver not available", format);
+    /* Encode tile directly via libpng/libjpeg/libwebp */
+    if (encoder(tile_data, file_path) != 0) {
+        error("Failed to encode tile: %s", file_path);
         return -1;
     }
-
-    /* JPEG doesn't support alpha; use 3 bands (RGB) for JPEG, 4 (RGBA) for PNG/WebP */
-    int has_alpha = (strcmp(format, "jpeg") != 0);
-    int out_bands = has_alpha ? 4 : 3;
-
-    /* Create MEM dataset, then encode to output format */
-    GDALDriverH mem_driver = GDALGetDriverByName("MEM");
-    GDALDatasetH mem_ds = GDALCreate(mem_driver, "", TILE_SIZE, TILE_SIZE, out_bands, GDT_Byte, NULL);
-    if (!mem_ds) {
-        error("Failed to create MEM dataset for tile");
-        return -1;
-    }
-
-    /* Set color interpretation */
-    GDALColorInterp interp[] = {GCI_RedBand, GCI_GreenBand, GCI_BlueBand, GCI_AlphaBand};
-    for (int b = 0; b < out_bands; b++) {
-        GDALSetRasterColorInterpretation(GDALGetRasterBand(mem_ds, b + 1), interp[b]);
-    }
-
-    /* Write bands from pixel-interleaved RGBA buffer (reuse band_map from read) */
-    if (GDALDatasetRasterIO(mem_ds, GF_Write, 0, 0, TILE_SIZE, TILE_SIZE, tile_data, TILE_SIZE, TILE_SIZE, GDT_Byte,
-                            out_bands, band_map, 4, (GSpacing)TILE_SIZE * 4, 1) != CE_None) {
-        error("GDALDatasetRasterIO write failed");
-        GDALClose(mem_ds);
-        return -1;
-    }
-
-    /* Create output file */
-    GDALDatasetH out_ds = GDALCreateCopy(out_driver, file_path, mem_ds, FALSE, NULL, NULL, NULL);
-    if (!out_ds) {
-        error("Failed to write tile: %s", file_path);
-        GDALClose(mem_ds);
-        return -1;
-    }
-
-    GDALClose(out_ds);
-    GDALClose(mem_ds);
 
     return 0;
 }
@@ -618,6 +582,13 @@ int generate_tileset_tiles_parallel(const Tileset **tilesets, int tileset_count,
     GDALAllRegister();
 
     info("\nGenerating tiles...");
+
+    /* Resolve tile encoder once before any workers */
+    tile_encode_fn encoder = tile_encode_get(format);
+    if (!encoder) {
+        error("Unknown tile format: %s", format);
+        return -1;
+    }
 
     GDALRIOResampleAlg resample_alg = parse_resampling(resampling);
 
@@ -760,7 +731,7 @@ int generate_tileset_tiles_parallel(const Tileset **tilesets, int tileset_count,
                     }
 
                     generate_base_tile(vrt_cache[z], tiles[i].z, tiles[i].x, tiles[i].y, outpath, tileset->tile_path,
-                                       format, resample_alg, tile_data);
+                                       format, encoder, resample_alg, tile_data);
                 }
 
                 /* Close all cached VRTs */
