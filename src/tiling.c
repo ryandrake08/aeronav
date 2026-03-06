@@ -20,8 +20,6 @@
 
 #include <cpl_conv.h>
 #include <gdal.h>
-#include <gdal_utils.h>
-
 #include "aeronav.h"
 #include "tile_encode.h"
 
@@ -33,115 +31,81 @@
 #define ORIGIN_SHIFT 20037508.342789244
 
 /* ============================================================================
- * VRT Building
+ * Dataset Info Collection
  *
- * Builds Virtual Rasters (VRTs) for tilesets. Datasets are ordered by max_lod
- * descending so that smaller max_lod datasets (more appropriate for that zoom
- * level) appear last in the VRT and render on top.
+ * Pre-computes metadata for each dataset in a tileset (bounds, geotransform,
+ * dimensions) for direct GeoTIFF reading during tile generation. Datasets are
+ * ordered by max_lod descending so that lower max_lod datasets (more
+ * appropriate for the zoom level) render on top.
  * ============================================================================ */
 
-/* Structure for sorting datasets by max_lod */
+/* Pre-computed metadata for a reprojected dataset */
 typedef struct {
-    const char *tmp_file_path;
+    char path[PATH_SIZE];
+    double min_x, min_y, max_x, max_y; /* EPSG:3857 bounds */
+    double gt[6];                       /* Geotransform */
+    int width, height;
+    int band_count;
     int max_lod;
-} DatasetSortEntry;
+} TileDatasetInfo;
 
-/* Comparison function for sorting datasets by max_lod descending */
-static int compare_by_max_lod_desc(const void *a, const void *b) {
-    const DatasetSortEntry *ea = (const DatasetSortEntry *)a;
-    const DatasetSortEntry *eb = (const DatasetSortEntry *)b;
+/* Comparison function for sorting TileDatasetInfo by max_lod descending */
+static int compare_ds_info_by_max_lod_desc(const void *a, const void *b) {
+    const TileDatasetInfo *ea = (const TileDatasetInfo *)a;
+    const TileDatasetInfo *eb = (const TileDatasetInfo *)b;
     return eb->max_lod - ea->max_lod;
 }
 
 /*
- * Build a VRT for a specific zoom level.
+ * Collect metadata for all reprojected datasets in a tileset.
  *
- * Includes only datasets where max_lod >= zoom, ordered by max_lod
- * descending so that smaller max_lod datasets (more appropriate for
- * this zoom level) appear last and render on top.
+ * Opens each reprojected TIF, reads geotransform/dimensions/band count,
+ * and stores in a TileDatasetInfo array sorted by max_lod descending.
+ * Skips datasets whose TIF files don't exist.
  *
- * Returns 0 on success, -1 on error or if no datasets qualify.
+ * Returns 0 on success, -1 on allocation failure.
+ * Sets *out_infos and *out_count. Caller must free *out_infos.
  */
-static int build_zoom_vrt(const Tileset *tileset, int zoom, const char *tmppath, char *vrt_path_out) {
-    /* First pass: count qualifying datasets and collect info */
-    DatasetSortEntry *entries = malloc(tileset->dataset_count * sizeof(DatasetSortEntry));
-    char (*path_buf)[PATH_SIZE] = malloc(tileset->dataset_count * PATH_SIZE);
+static int collect_dataset_infos(const Tileset *tileset, const char *tmppath, TileDatasetInfo **out_infos,
+                                 int *out_count) {
+    TileDatasetInfo *infos = malloc(tileset->dataset_count * sizeof(TileDatasetInfo));
+    if (!infos) return -1;
 
-    if (!entries || !path_buf) {
-        error("Failed to allocate memory for zoom VRT");
-        free(entries);
-        free(path_buf);
-        return -1;
-    }
-
-    int entry_count = 0;
+    int count = 0;
     for (size_t d = 0; d < tileset->dataset_count; d++) {
         const Dataset *dataset = get_dataset(tileset->datasets[d]);
         if (!dataset) continue;
 
-        /* Only include datasets where max_lod >= zoom */
-        if (dataset->max_lod < zoom) continue;
+        TileDatasetInfo *info = &infos[count];
+        snprintf(info->path, PATH_SIZE, "%s/%s", tmppath, dataset->tmp_file);
 
-        /* Build path and check existence */
-        snprintf(path_buf[entry_count], PATH_SIZE, "%s/%s", tmppath, dataset->tmp_file);
+        GDALDatasetH ds = GDALOpen(info->path, GA_ReadOnly);
+        if (!ds) continue;
 
-        struct stat st;
-        if (stat(path_buf[entry_count], &st) != 0) continue;
+        if (GDALGetGeoTransform(ds, info->gt) != CE_None) {
+            GDALClose(ds);
+            continue;
+        }
 
-        entries[entry_count].tmp_file_path = path_buf[entry_count];
-        entries[entry_count].max_lod = dataset->max_lod;
-        entry_count++;
+        info->width = GDALGetRasterXSize(ds);
+        info->height = GDALGetRasterYSize(ds);
+        info->band_count = GDALGetRasterCount(ds);
+        info->max_lod = dataset->max_lod;
+
+        info->min_x = info->gt[0];
+        info->max_x = info->gt[0] + info->width * info->gt[1];
+        info->max_y = info->gt[3];
+        info->min_y = info->gt[3] + info->height * info->gt[5];
+
+        GDALClose(ds);
+        count++;
     }
 
-    if (entry_count == 0) {
-        free(entries);
-        free(path_buf);
-        return -1;
-    }
+    /* Sort by max_lod descending (highest first = background, lowest last = foreground) */
+    qsort(infos, count, sizeof(TileDatasetInfo), compare_ds_info_by_max_lod_desc);
 
-    /* Sort by max_lod descending (highest first = bottom of VRT stack) */
-    qsort(entries, entry_count, sizeof(DatasetSortEntry), compare_by_max_lod_desc);
-
-    /* Build array of file paths in sorted order */
-    const char **sorted_files = malloc(entry_count * sizeof(char *));
-    if (!sorted_files) {
-        error("Failed to allocate sorted file array");
-        free(entries);
-        free(path_buf);
-        return -1;
-    }
-
-    for (int i = 0; i < entry_count; i++) {
-        sorted_files[i] = entries[i].tmp_file_path;
-    }
-
-    /* Build VRT path */
-    snprintf(vrt_path_out, PATH_SIZE, "%s/__%s__z%d.vrt", tmppath, tileset->name, zoom);
-
-    /* Build the VRT */
-    GDALBuildVRTOptions *vrt_options = GDALBuildVRTOptionsNew(NULL, NULL);
-    if (!vrt_options) {
-        error("Failed to create VRT options");
-        free(sorted_files);
-        free(entries);
-        free(path_buf);
-        return -1;
-    }
-
-    int error_flag = 0;
-    GDALDatasetH vrt = GDALBuildVRT(vrt_path_out, entry_count, NULL, sorted_files, vrt_options, &error_flag);
-
-    GDALBuildVRTOptionsFree(vrt_options);
-    free(sorted_files);
-    free(entries);
-    free(path_buf);
-
-    if (!vrt || error_flag) {
-        error("Failed to build zoom VRT for z%d", zoom);
-        return -1;
-    }
-
-    GDALClose(vrt);
+    *out_infos = infos;
+    *out_count = count;
     return 0;
 }
 
@@ -342,9 +306,9 @@ static TileManifest *build_tile_manifest(const Tileset *tileset, const char *tmp
         if (ds_max_zoom < m->min_zoom) ds_max_zoom = m->min_zoom;
 
         /* Add tiles at EVERY zoom level from min_zoom to dataset's max_lod.
-         * At each zoom level Z, tiles are generated from a zoom-specific VRT
-         * containing datasets where max_lod >= Z. This dataset qualifies for
-         * all zoom levels from min_zoom to its max_lod. */
+         * At each zoom level Z, only datasets where max_lod >= Z contribute.
+         * This dataset qualifies for all zoom levels from min_zoom to its
+         * max_lod. */
         for (int z = m->min_zoom; z <= ds_max_zoom; z++) {
             ZoomTileSet *zts = &m->zooms[z - m->min_zoom];
             if (add_tiles_for_bounds(zts, lon_min, lat_min, lon_max, lat_max, z) < 0) {
@@ -420,9 +384,97 @@ typedef struct {
  * Tile Generation from Source Raster
  * ============================================================================ */
 
-static int generate_base_tile(GDALDatasetH ds, int z, int x, int y, const char *outpath, const char *tile_path,
-                              const char *format_ext, tile_encode_fn encoder, GDALRIOResampleAlg resample_alg,
-                              unsigned char *tile_data) {
+/*
+ * Read from a single dataset into a tile buffer region.
+ *
+ * Computes the source window and destination position using pre-computed
+ * dataset metadata. Writes into the specified buffer at the correct offset.
+ * Fills alpha to 255 if the source has no alpha band.
+ *
+ * Returns 1 if the dataset contributed pixels, 0 if it didn't (no intersection,
+ * empty region, or read failure).
+ */
+static int read_dataset_into_tile(GDALDatasetH ds, const TileDatasetInfo *info, double tile_min_x, double tile_min_y,
+                                  double tile_max_x, double tile_max_y, GDALRIOResampleAlg resample_alg,
+                                  unsigned char *buf) {
+    /* Calculate pixel coordinates in source dataset */
+    double src_x0 = (tile_min_x - info->gt[0]) / info->gt[1];
+    double src_y0 = (tile_max_y - info->gt[3]) / info->gt[5]; /* gt[5] is negative */
+    double src_x1 = (tile_max_x - info->gt[0]) / info->gt[1];
+    double src_y1 = (tile_min_y - info->gt[3]) / info->gt[5];
+
+    /* Clamp to dataset bounds */
+    if (src_x0 < 0) src_x0 = 0;
+    if (src_y0 < 0) src_y0 = 0;
+    if (src_x1 > info->width) src_x1 = info->width;
+    if (src_y1 > info->height) src_y1 = info->height;
+
+    int read_x = (int)src_x0;
+    int read_y = (int)src_y0;
+    int read_w = (int)(src_x1 - src_x0 + 0.5);
+    int read_h = (int)(src_y1 - src_y0 + 0.5);
+
+    if (read_w <= 0 || read_h <= 0) return 0;
+
+    /* Calculate where in the tile this data goes */
+    int tile_x0 = 0, tile_y0 = 0, tile_w = TILE_SIZE, tile_h = TILE_SIZE;
+
+    if (tile_min_x < info->min_x) {
+        tile_x0 = (int)((info->min_x - tile_min_x) / (tile_max_x - tile_min_x) * TILE_SIZE);
+        tile_w = TILE_SIZE - tile_x0;
+    }
+    if (tile_max_x > info->max_x) {
+        tile_w = (int)((info->max_x - tile_min_x) / (tile_max_x - tile_min_x) * TILE_SIZE) - tile_x0;
+    }
+    if (tile_max_y > info->max_y) {
+        tile_y0 = (int)((tile_max_y - info->max_y) / (tile_max_y - tile_min_y) * TILE_SIZE);
+        tile_h = TILE_SIZE - tile_y0;
+    }
+    if (tile_min_y < info->min_y) {
+        tile_h = (int)((tile_max_y - info->min_y) / (tile_max_y - tile_min_y) * TILE_SIZE) - tile_y0;
+    }
+
+    if (tile_w <= 0 || tile_h <= 0) return 0;
+
+    /* Read all bands at once into pixel-interleaved RGBA layout */
+    int read_bands = (info->band_count >= 4) ? 4 : 3;
+    int band_map[] = {1, 2, 3, 4};
+
+    GDALRasterIOExtraArg extra_arg;
+    INIT_RASTERIO_EXTRA_ARG(extra_arg);
+    extra_arg.eResampleAlg = resample_alg;
+
+    unsigned char *dst = buf + ((size_t)tile_y0 * TILE_SIZE + tile_x0) * 4;
+
+    if (GDALDatasetRasterIOEx(ds, GF_Read, read_x, read_y, read_w, read_h, dst, tile_w, tile_h, GDT_Byte, read_bands,
+                              band_map, 4, (GSpacing)TILE_SIZE * 4, 1, &extra_arg) != CE_None) {
+        return 0;
+    }
+
+    /* Fill alpha channel if source has no alpha band */
+    if (info->band_count < 4) {
+        for (int y_off = 0; y_off < tile_h; y_off++) {
+            for (int x_off = 0; x_off < tile_w; x_off++) {
+                buf[((tile_y0 + y_off) * TILE_SIZE + (tile_x0 + x_off)) * 4 + 3] = 255;
+            }
+        }
+    }
+
+    return 1;
+}
+
+/*
+ * Generate a single tile by reading directly from reprojected GeoTIFFs.
+ *
+ * Iterates datasets in max_lod descending order (highest first = background).
+ * The first contributing dataset reads directly into tile_data (zero-copy).
+ * Subsequent datasets read into blend_buf and composite onto tile_data
+ * using painter's algorithm (overwrite where alpha > 0).
+ */
+static int generate_base_tile(const TileDatasetInfo *ds_infos, int ds_count, GDALDatasetH *ds_handles, int z, int x,
+                               int y, const char *outpath, const char *tile_path, const char *format_ext,
+                               tile_encode_fn encoder, GDALRIOResampleAlg resample_alg, unsigned char *tile_data,
+                               unsigned char *blend_buf) {
     /* Skip if tile already exists */
     char file_path[PATH_SIZE];
     snprintf(file_path, sizeof(file_path), "%s/%s/%d/%d/%d.%s", outpath, tile_path, z, x, y, format_ext);
@@ -435,105 +487,53 @@ static int generate_base_tile(GDALDatasetH ds, int z, int x, int y, const char *
     double tile_min_x, tile_min_y, tile_max_x, tile_max_y;
     tile_bounds(z, x, y, &tile_min_x, &tile_min_y, &tile_max_x, &tile_max_y);
 
-    /* Get dataset bounds and geotransform */
-    double gt[6];
-    if (GDALGetGeoTransform(ds, gt) != CE_None) {
-        error("Failed to get geotransform for tile %d/%d/%d", z, x, y);
-        return -1;
-    }
-
-    int ds_width = GDALGetRasterXSize(ds);
-    int ds_height = GDALGetRasterYSize(ds);
-
-    double ds_min_x = gt[0];
-    double ds_max_x = gt[0] + ds_width * gt[1];
-    double ds_max_y = gt[3];
-    double ds_min_y = gt[3] + ds_height * gt[5]; /* gt[5] is negative */
-
-    /* Check if tile intersects dataset */
-    if (tile_max_x <= ds_min_x || tile_min_x >= ds_max_x || tile_max_y <= ds_min_y || tile_min_y >= ds_max_y) {
-        return 1; /* Skip - no intersection */
-    }
-
-    /* Calculate pixel coordinates in source dataset */
-    double src_x0 = (tile_min_x - gt[0]) / gt[1];
-    double src_y0 = (tile_max_y - gt[3]) / gt[5]; /* Note: gt[5] is negative */
-    double src_x1 = (tile_max_x - gt[0]) / gt[1];
-    double src_y1 = (tile_min_y - gt[3]) / gt[5];
-
-    /* Clamp to dataset bounds */
-    if (src_x0 < 0) src_x0 = 0;
-    if (src_y0 < 0) src_y0 = 0;
-    if (src_x1 > ds_width) src_x1 = ds_width;
-    if (src_y1 > ds_height) src_y1 = ds_height;
-
-    int read_x = (int)src_x0;
-    int read_y = (int)src_y0;
-    int read_w = (int)(src_x1 - src_x0 + 0.5);
-    int read_h = (int)(src_y1 - src_y0 + 0.5);
-
-    if (read_w <= 0 || read_h <= 0) {
-        return 1; /* Skip - empty read region */
-    }
-
-    /* Calculate where in the tile this data goes */
-    int tile_x0 = 0, tile_y0 = 0, tile_w = TILE_SIZE, tile_h = TILE_SIZE;
-
-    /* If source doesn't cover full tile, adjust */
-    if (tile_min_x < ds_min_x) {
-        tile_x0 = (int)((ds_min_x - tile_min_x) / (tile_max_x - tile_min_x) * TILE_SIZE);
-        tile_w = TILE_SIZE - tile_x0;
-    }
-    if (tile_max_x > ds_max_x) {
-        tile_w = (int)((ds_max_x - tile_min_x) / (tile_max_x - tile_min_x) * TILE_SIZE) - tile_x0;
-    }
-    if (tile_max_y > ds_max_y) {
-        tile_y0 = (int)((tile_max_y - ds_max_y) / (tile_max_y - tile_min_y) * TILE_SIZE);
-        tile_h = TILE_SIZE - tile_y0;
-    }
-    if (tile_min_y < ds_min_y) {
-        tile_h = (int)((tile_max_y - ds_min_y) / (tile_max_y - tile_min_y) * TILE_SIZE) - tile_y0;
-    }
-
-    if (tile_w <= 0 || tile_h <= 0) {
-        return 1; /* Skip */
-    }
-
-    /* Check band count */
-    int band_count = GDALGetRasterCount(ds);
-    if (band_count < 3) {
-        error("Expected at least 3 bands, got %d", band_count);
-        return -1;
-    }
-
-    /* Clear tile buffer (transparent black for partial tiles) */
+    /* Clear tile buffer to transparent black */
     memset(tile_data, 0, TILE_SIZE * TILE_SIZE * 4);
 
-    /* Read all bands at once into pixel-interleaved RGBA layout.
-     * Writes directly into the correct sub-region of the tile buffer,
-     * using stride to skip over surrounding transparent pixels. */
-    int read_bands = (band_count >= 4) ? 4 : 3;
-    int band_map[] = {1, 2, 3, 4};
+    int has_data = 0;
 
-    GDALRasterIOExtraArg extra_arg;
-    INIT_RASTERIO_EXTRA_ARG(extra_arg);
-    extra_arg.eResampleAlg = resample_alg;
+    /* Iterate datasets in max_lod descending order (highest first = background,
+     * lowest last = foreground). Later datasets overwrite earlier ones. */
+    for (int i = 0; i < ds_count; i++) {
+        const TileDatasetInfo *info = &ds_infos[i];
 
-    unsigned char *dst = tile_data + ((size_t)tile_y0 * TILE_SIZE + tile_x0) * 4;
+        /* Skip datasets that don't qualify for this zoom level */
+        if (info->max_lod < z) continue;
 
-    if (GDALDatasetRasterIOEx(ds, GF_Read, read_x, read_y, read_w, read_h, dst, tile_w, tile_h, GDT_Byte, read_bands,
-                              band_map, 4, (GSpacing)TILE_SIZE * 4, 1, &extra_arg) != CE_None) {
-        error("GDALDatasetRasterIOEx read failed for tile %d/%d/%d", z, x, y);
-        return -1;
-    }
+        /* Quick bounds check */
+        if (tile_max_x <= info->min_x || tile_min_x >= info->max_x || tile_max_y <= info->min_y ||
+            tile_min_y >= info->max_y) {
+            continue;
+        }
 
-    /* Fill alpha channel if source has no alpha band */
-    if (band_count < 4) {
-        for (int y_off = 0; y_off < tile_h; y_off++) {
-            for (int x_off = 0; x_off < tile_w; x_off++) {
-                tile_data[((tile_y0 + y_off) * TILE_SIZE + (tile_x0 + x_off)) * 4 + 3] = 255;
+        /* Lazy-open dataset handle */
+        if (!ds_handles[i]) {
+            ds_handles[i] = GDALOpen(info->path, GA_ReadOnly);
+            if (!ds_handles[i]) continue;
+        }
+
+        if (!has_data) {
+            /* First contributing dataset: read directly into tile_data */
+            has_data = read_dataset_into_tile(ds_handles[i], info, tile_min_x, tile_min_y, tile_max_x, tile_max_y,
+                                              resample_alg, tile_data);
+        } else {
+            /* Subsequent datasets: read into blend_buf, then composite */
+            memset(blend_buf, 0, TILE_SIZE * TILE_SIZE * 4);
+
+            if (read_dataset_into_tile(ds_handles[i], info, tile_min_x, tile_min_y, tile_max_x, tile_max_y,
+                                       resample_alg, blend_buf)) {
+                /* Composite: overwrite tile_data wherever blend_buf has alpha > 0 */
+                for (size_t px = 0; px < TILE_SIZE * TILE_SIZE * 4; px += 4) {
+                    if (blend_buf[px + 3] > 0) {
+                        memcpy(&tile_data[px], &blend_buf[px], 4);
+                    }
+                }
             }
         }
+    }
+
+    if (!has_data) {
+        return 1; /* No data for this tile */
     }
 
     /* Check if tile is empty (all transparent) */
@@ -570,15 +570,12 @@ static int generate_base_tile(GDALDatasetH ds, int z, int x, int y, const char *
  * Parallel Tile Generation
  * ============================================================================ */
 
-/* Maximum zoom level we support (zoom 0-20 covers all practical cases) */
-#define MAX_ZOOM 20
-
 /* Maximum parallel workers for tile generation */
 #define MAX_TILE_WORKERS 64
 
 int generate_tileset_tiles_parallel(const Tileset **tilesets, int tileset_count, const char *tmppath,
                                     const char *outpath, const char *format, const char *resampling, int num_workers) {
-    /* Initialize GDAL in parent (needed for manifest/VRT building) */
+    /* Initialize GDAL in parent (needed for manifest and dataset info collection) */
     GDALAllRegister();
 
     info("\nGenerating tiles...");
@@ -597,32 +594,37 @@ int generate_tileset_tiles_parallel(const Tileset **tilesets, int tileset_count,
 
         info("\n=== Tiles: %s ===", tileset->name);
 
+        /* Collect dataset metadata for direct GeoTIFF reading */
+        TileDatasetInfo *ds_infos = NULL;
+        int ds_count = 0;
+        if (collect_dataset_infos(tileset, tmppath, &ds_infos, &ds_count) != 0) {
+            error("Failed to collect dataset info for tileset: %s", tileset->name);
+            return -1;
+        }
+
+        if (ds_count == 0) {
+            info("  No datasets available");
+            free(ds_infos);
+            continue;
+        }
+
         /* Build tile manifest based on dataset coverage and max_lod */
         TileManifest *manifest = build_tile_manifest(tileset, tmppath);
         if (!manifest) {
             error("Failed to build tile manifest for tileset: %s", tileset->name);
+            free(ds_infos);
             return -1;
         }
 
         int zoom_min = manifest->min_zoom;
         int zoom_max = manifest->max_zoom;
 
-        /* Build all zoom-specific VRTs upfront and count total tiles */
-        char vrt_paths[MAX_ZOOM + 1][PATH_SIZE];
+        /* Count total tiles across all zoom levels */
         int total_tiles = 0;
 
-        info("  Building zoom-specific VRTs for zoom %d to %d", zoom_min, zoom_max);
         for (int z = zoom_min; z <= zoom_max; z++) {
             ZoomTileSet *zts = &manifest->zooms[z - zoom_min];
-            vrt_paths[z][0] = '\0'; /* Mark as invalid initially */
-
             if (zts->count == 0) continue;
-
-            if (build_zoom_vrt(tileset, z, tmppath, vrt_paths[z]) != 0) {
-                /* No datasets for this zoom level */
-                continue;
-            }
-
             total_tiles += zts->count;
             info("    Zoom %d: %d tiles", z, zts->count);
         }
@@ -630,23 +632,23 @@ int generate_tileset_tiles_parallel(const Tileset **tilesets, int tileset_count,
         if (total_tiles == 0) {
             info("  No tiles to generate");
             free_tile_manifest(manifest);
+            free(ds_infos);
             continue;
         }
 
-        info("  Total: %d tiles across %d zoom levels", total_tiles, zoom_max - zoom_min + 1);
+        info("  Total: %d tiles across %d zoom levels (%d datasets)", total_tiles, zoom_max - zoom_min + 1, ds_count);
 
         /* Collect all tiles from all zoom levels into a single list */
         TileCoord *tiles = malloc(total_tiles * sizeof(TileCoord));
         if (!tiles) {
             error("Failed to allocate tile list");
             free_tile_manifest(manifest);
+            free(ds_infos);
             return -1;
         }
 
         int tile_idx = 0;
         for (int z = zoom_min; z <= zoom_max; z++) {
-            if (vrt_paths[z][0] == '\0') continue; /* Skip zoom levels without VRT */
-
             ZoomTileSet *zts = &manifest->zooms[z - zoom_min];
             for (int i = 0; i < zts->count; i++) {
                 PackedTile pt = zts->tiles[i];
@@ -672,12 +674,15 @@ int generate_tileset_tiles_parallel(const Tileset **tilesets, int tileset_count,
             error("Failed to create shared memory for tile counter");
             free(tiles);
             free_tile_manifest(manifest);
+            free(ds_infos);
             return -1;
         }
         atomic_int *next_tile = (atomic_int *)map_result;
         atomic_store(next_tile, 0);
 
-        /* Fork worker processes - single parallel phase for all zoom levels */
+        /* Fork worker processes - single parallel phase for all zoom levels.
+         * Each worker inherits ds_infos (read-only) via fork() and maintains
+         * its own lazily-opened dataset handles. */
         pid_t pids[MAX_TILE_WORKERS];
 
         for (int w = 0; w < actual_workers; w++) {
@@ -690,6 +695,7 @@ int generate_tileset_tiles_parallel(const Tileset **tilesets, int tileset_count,
                 munmap(next_tile, sizeof(atomic_int));
                 free(tiles);
                 free_tile_manifest(manifest);
+                free(ds_infos);
                 return -1;
             }
 
@@ -699,13 +705,17 @@ int generate_tileset_tiles_parallel(const Tileset **tilesets, int tileset_count,
                 GDALSetCacheMax64(32LL * 1024 * 1024); /* 32 MB absolute limit */
                 CPLSetConfigOption("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR");
 
-                /* Cache of open VRT handles by zoom level (opened lazily) */
-                GDALDatasetH vrt_cache[MAX_ZOOM + 1] = {NULL};
+                /* Per-worker dataset handle cache (opened lazily on first use) */
+                GDALDatasetH *ds_handles = calloc(ds_count, sizeof(GDALDatasetH));
 
-                /* Allocate tile buffer once per worker, reused across all tiles */
+                /* Allocate tile buffer and blend buffer, reused across all tiles */
                 unsigned char *tile_data = malloc(TILE_SIZE * TILE_SIZE * 4);
-                if (!tile_data) {
-                    error("Worker %d: Failed to allocate tile buffer", w);
+                unsigned char *blend_buf = malloc(TILE_SIZE * TILE_SIZE * 4);
+                if (!ds_handles || !tile_data || !blend_buf) {
+                    error("Worker %d: Failed to allocate buffers", w);
+                    free(ds_handles);
+                    free(tile_data);
+                    free(blend_buf);
                     _exit(1);
                 }
 
@@ -714,31 +724,17 @@ int generate_tileset_tiles_parallel(const Tileset **tilesets, int tileset_count,
                     int i = atomic_fetch_add(next_tile, 1);
                     if (i >= total_tiles) break;
 
-                    int z = tiles[i].z;
-
-                    /* Open VRT for this zoom level if not already cached */
-                    if (!vrt_cache[z]) {
-                        vrt_cache[z] = GDALOpen(vrt_paths[z], GA_ReadOnly);
-                        if (!vrt_cache[z]) {
-                            error("Worker %d: Failed to open VRT for zoom %d", w, z);
-                            /* Clean up and exit */
-                            free(tile_data);
-                            for (int zz = 0; zz <= MAX_ZOOM; zz++) {
-                                if (vrt_cache[zz]) GDALClose(vrt_cache[zz]);
-                            }
-                            _exit(1);
-                        }
-                    }
-
-                    generate_base_tile(vrt_cache[z], tiles[i].z, tiles[i].x, tiles[i].y, outpath, tileset->tile_path,
-                                       format, encoder, resample_alg, tile_data);
+                    generate_base_tile(ds_infos, ds_count, ds_handles, tiles[i].z, tiles[i].x, tiles[i].y, outpath,
+                                       tileset->tile_path, format, encoder, resample_alg, tile_data, blend_buf);
                 }
 
-                /* Close all cached VRTs */
+                /* Close all cached dataset handles */
+                for (int j = 0; j < ds_count; j++) {
+                    if (ds_handles[j]) GDALClose(ds_handles[j]);
+                }
+                free(ds_handles);
                 free(tile_data);
-                for (int z = 0; z <= MAX_ZOOM; z++) {
-                    if (vrt_cache[z]) GDALClose(vrt_cache[z]);
-                }
+                free(blend_buf);
 
                 _exit(0);
             }
@@ -760,6 +756,7 @@ int generate_tileset_tiles_parallel(const Tileset **tilesets, int tileset_count,
         munmap(next_tile, sizeof(atomic_int));
         free(tiles);
         free_tile_manifest(manifest);
+        free(ds_infos);
 
         if (failed) {
             return -1;

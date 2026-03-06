@@ -136,9 +136,9 @@ Dataset and tileset definitions are stored in `aeronav.conf.json`:
 ## Processing Pipeline
 
 ```
-ZIP files --> /vsizip/ --> RGB Expand --> Mask --> GCPs --> Warp --> Overviews --> VRTs --> Tiles
+ZIP files --> /vsizip/ --> RGB Expand --> Mask --> GCPs --> Warp --> Overviews --> Tiles
                 |              |           |        |        |          |           |
-                |              |           |        |        |          |           +-- Zoom-specific VRTs
+                |              |           |        |        |          |           +-- Direct GeoTIFF reads
                 |              |           |        |        |          +-- GDALBuildOverviews
                 |              |           |        |        +-- EPSG:3857 reprojection
                 |              |           |        +-- Apply GCPs with offset adjustment
@@ -153,11 +153,11 @@ ZIP files --> /vsizip/ --> RGB Expand --> Mask --> GCPs --> Warp --> Overviews -
 
 2. **In-memory processing**: Intermediate datasets use GDAL's MEM driver, avoiding temporary file writes until the final reprojected output.
 
-3. **Zoom-specific VRTs**: Each zoom level uses a VRT containing only datasets where `max_lod >= zoom`. This prevents "patchwork" artifacts where lower-resolution datasets would appear at higher zoom levels.
+3. **Zoom-specific dataset filtering**: At each zoom level, only datasets where `max_lod >= zoom` contribute to tiles. This prevents "patchwork" artifacts where lower-resolution datasets would appear at higher zoom levels. Tile generation reads directly from reprojected GeoTIFFs, avoiding VRT float promotion overhead.
 
 4. **Inline overview building**: After reprojection, `GDALBuildOverviews()` pre-computes image pyramids (levels 2-64) with AVERAGE resampling. This allows efficient tile generation at any zoom level.
 
-5. **Single-phase parallel tiling**: All tiles across all zoom levels are collected upfront, workers fork once, and each caches VRT handles by zoom level. No per-zoom-level forking overhead.
+5. **Single-phase parallel tiling**: All tiles across all zoom levels are collected upfront, workers fork once, and each caches dataset handles. No per-zoom-level forking overhead.
 
 6. **Dynamic work distribution**: Workers grab jobs via atomic counter rather than static assignment, ensuring good load balancing.
 
@@ -195,7 +195,7 @@ Datasets are sorted by estimated work (mask bounding box area) before processing
 | `src/aeronav_download.c` | Chart downloader using libcurl and libxml2 |
 | `src/config.c` | JSON configuration loading via cJSON |
 | `src/processing.c` | Dataset processing pipeline (mask, GCPs, warp) |
-| `src/tiling.c` | XYZ tile generation from VRT mosaics |
+| `src/tiling.c` | XYZ tile generation with direct GeoTIFF reads |
 | `src/jobqueue.c` | Parallel job queue with fork/pipe IPC |
 | `src/cJSON.c/h` | Vendored JSON parser (MIT license) |
 | `src/aeronav.h` | Shared types and function declarations |
@@ -238,23 +238,6 @@ The Python implementation uses rasterio instead of the GDAL C API. It produces i
 3. For insets without georeferencing, identify GCPs (pixel x,y -> lon,lat)
 4. Add dataset definition to `aeronav.conf.json`
 5. Add dataset to appropriate tileset(s)
-
-### Optimizations
-
-Profiling tile generation with `perf` (on a 48-core machine processing 280K tiles) reveals that **~50% of CPU time is GDAL overhead** converting data that is already in the right format, while the actual useful work (decompression, resampling, encoding) is a fraction of the total:
-
-| Category | Self % | Details |
-|----------|--------|---------|
-| GDAL byte shuffling | ~18% | `GDALCopyWords64` — strided byte scatter/gather for band interleave/de-interleave |
-| VRT float intermediates | ~11% | `VRTComplexSource::RasterIOInternal<float>` — VRT promotes byte→float→byte for alpha-bearing sources |
-| PNG encoding | ~12% | `png_write_row` (8%) + `deflate` (4%) |
-| GDAL I/O plumbing | ~7% | `IRasterIO`, `RasterIOResampled`, `GDALGetDataTypeSizeBytes` |
-| Memory ops | ~4% | `memmove`, `memset` |
-| LZW decompression | ~1% | `TIFFReadEncodedTile` — actual source data I/O is cheap |
-
-**Planned optimizations** (in priority order):
-
-1. **Bypass VRT for reads** (~10-15% savings): Read directly from GeoTIFF overviews instead of through VRT, eliminating the `VRTComplexSource` float intermediate path. Larger architectural change.
 
 ### Code Style
 

@@ -147,7 +147,7 @@ double resolution_for_zoom(int zoom);
 /*
  * Generate tiles for all tilesets using parallel workers.
  *
- * For each tileset, opens the VRT at {tmppath}/__{tileset_name}.vrt,
+ * For each tileset, reads from reprojected GeoTIFFs in tmppath,
  * determines tiles to generate, and generates them using worker processes.
  *
  * Returns 0 on success, -1 on error.
