@@ -667,14 +667,14 @@ int generate_tileset_tiles_parallel(const Tileset **tilesets, int tileset_count,
         }
 
         /* Create shared atomic counter for dynamic work distribution */
-        atomic_int *next_tile =
-            mmap(NULL, sizeof(atomic_int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-        if (next_tile == MAP_FAILED) {
+        void *map_result = mmap(NULL, sizeof(atomic_int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+        if (map_result == MAP_FAILED) { // NOLINT(performance-no-int-to-ptr)
             error("Failed to create shared memory for tile counter");
             free(tiles);
             free_tile_manifest(manifest);
             return -1;
         }
+        atomic_int *next_tile = (atomic_int *)map_result;
         atomic_store(next_tile, 0);
 
         /* Fork worker processes - single parallel phase for all zoom levels */
